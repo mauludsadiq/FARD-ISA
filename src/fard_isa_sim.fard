@@ -180,7 +180,7 @@ fn step(state, program) {
     seq: before.seq + 1,
     receipt: receipt_after,
     halted: tr.halted || after0.halted,
-    events: list.append(before.events, [{ event_obj: event_obj, digest: event_d, memory_read_digest: event_obj.memory_read_digest, memory_write_digest: event_obj.memory_write_digest }])
+    events: list.append(before.events, { event_obj: event_obj, digest: event_d, opcode: event_obj.opcode, memory_read_digest: event_obj.memory_read_digest, memory_write_digest: event_obj.memory_write_digest, register_read_digest: event_obj.register_read_digest, register_write_digest: event_obj.register_write_digest, trap_digest: event_obj.trap_digest })
   } in
   { state_before: before, instr: instr, transition: tr, event: event_obj, event_digest: event_d, receipt_before: before.receipt, receipt_after: receipt_after, state_after: after }
 }

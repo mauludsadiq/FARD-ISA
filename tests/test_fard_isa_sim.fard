@@ -2,6 +2,7 @@ import("../src/fard_isa_opcodes") as op
 import("../src/fard_isa_types") as ty
 import("../src/omir_to_fard_isa") as lower
 import("../src/fard_isa_sim") as sim
+import("../src/canonical_event_v1") as event
 import("std/list") as list
 
 test "sim add 40 and 2" {
@@ -86,4 +87,83 @@ test "sim STORE.MEM64 then LOAD.MEM64 emits memory digests" {
   final.regs["3"].payload == 42 &&
   list.len(final.events) == 5 &&
   final.memory_root != ty.memory_root({})
+}
+
+test "sim FVAL_BOX_I64 boxes integer payload with canonical event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let empty_write = event.reg_write_digest([]) in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 77, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(77))
+    ]),
+    lower.isa_instr(op.FVAL_BOX_I64, 2, 1, 0, 0, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let box_ev = list.get(final.events, 1) in
+  final.regs["2"].tag == ty.TAG_INT &&
+  final.regs["2"].payload == 77 &&
+  list.len(final.events) == 3 &&
+  box_ev["event_obj"].opcode == op.FVAL_BOX_I64 &&
+  box_ev["register_write_digest"] != empty_write &&
+  final.receipt != genesis
+}
+
+test "sim FVAL_UNBOX_I64 extracts int payload with canonical event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let empty_read = event.reg_read_digest([]) in
+  let empty_write = event.reg_write_digest([]) in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 123, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(123))
+    ]),
+    lower.isa_instr(op.FVAL_BOX_I64, 2, 1, 0, 0, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.FVAL_UNBOX_I64, 3, 2, 0, 0, [
+      lower.operand(1, 16, ty.hex16(3)),
+      lower.operand(1, 16, ty.hex16(2))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let unbox_ev = list.get(final.events, 2) in
+  final.regs["3"].tag == ty.TAG_INT &&
+  final.regs["3"].payload == 123 &&
+  list.len(final.events) == 4 &&
+  unbox_ev.opcode == op.FVAL_UNBOX_I64 &&
+  unbox_ev.register_read_digest != empty_read &&
+  unbox_ev.register_write_digest != empty_write &&
+  final.receipt != genesis
+}
+
+test "sim FVAL_UNBOX_I64 traps on non-int tag with canonical event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let empty_read = event.reg_read_digest([]) in
+  let empty_write = event.reg_write_digest([]) in
+  let initial = ty.initial_state(1, genesis) in
+  let regs = ty.reg_set(initial.regs, 1, ty.fardval_bool(true)) in
+  let state = { ...initial, regs: regs } in
+  let program = [
+    lower.isa_instr(op.FVAL_UNBOX_I64, 2, 1, 0, 0, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, state, 20) in
+  let trap_ev = list.get(final.events, 0) in
+  final.halted == true &&
+  list.len(final.events) == 1 &&
+  trap_ev.opcode == op.FVAL_UNBOX_I64 &&
+  trap_ev.register_read_digest != empty_read &&
+  trap_ev.register_write_digest == empty_write &&
+  trap_ev.trap_digest != event.trap_digest_none() &&
+  final.receipt != genesis
 }
