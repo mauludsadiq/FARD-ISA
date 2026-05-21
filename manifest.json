@@ -1,0 +1,22 @@
+{
+  "name": "FARD_ISA",
+  "version": "0.1.0",
+  "purpose": "Canonical FARD-ISA specification, event schema, OMIR mapping, and simulator scaffold in FARD.",
+  "files": [
+    "README.md",
+    "examples/add2_isa.fard",
+    "spec/CANONICAL_EVENT_V1.md",
+    "spec/FARD_ISA_SPEC_v1.md",
+    "spec/TRUST_MODEL.md",
+    "src/canonical_event_v1.fard",
+    "src/fard_isa.fard",
+    "src/fard_isa_opcodes.fard",
+    "src/fard_isa_sim.fard",
+    "src/fard_isa_types.fard",
+    "src/omir_to_fard_isa.fard",
+    "src/trust_semantics.fard",
+    "tests/test_canonical_event_v1.fard",
+    "tests/test_fard_isa_sim.fard",
+    "tests/test_omir_to_fard_isa.fard"
+  ]
+}

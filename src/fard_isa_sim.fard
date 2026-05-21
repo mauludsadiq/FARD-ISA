@@ -1,0 +1,171 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+import("canonical_event_v1") as event
+import("fard_isa_opcodes") as op
+import("fard_isa_types") as ty
+import("trust_semantics") as trust
+
+fn pc_index(pc) {
+  pc / 16
+}
+
+fn fetch(program, pc) {
+  let idx = pc_index(pc) in
+  list.get(program, idx)
+}
+
+fn read_reg(state, idx) {
+  ty.reg_get(state.regs, idx)
+}
+
+fn write_reg(state, idx, value) {
+  { ...state, regs: ty.reg_set(state.regs, idx, value) }
+}
+
+fn empty_mem_read_root(state) {
+  state.memory_root
+}
+
+fn transition_result(next_pc, flags_after, privilege_after, reg_reads, reg_writes, mem_reads, mem_writes, result_digest, trap_digest, halted, extra_state) {
+  {
+    next_pc: next_pc,
+    flags_after: flags_after,
+    privilege_after: privilege_after,
+    reg_reads: reg_reads,
+    reg_writes: reg_writes,
+    mem_reads: mem_reads,
+    mem_writes: mem_writes,
+    result_digest: result_digest,
+    trap_digest: trap_digest,
+    halted: halted,
+    extra_state: extra_state
+  }
+}
+
+fn execute(state, instr) {
+  if state.locked &&
+     !(instr.opcode == op.TRUST_READ ||
+       instr.opcode == op.TRUST_ATTEST ||
+       instr.opcode == op.TRUST_FINALIZE ||
+       instr.opcode == op.HALT) then
+    transition_result(state.pc, state.flags, state.privilege, [], [], [], [], event.result_digest_unit(), event.trap_digest(1, "locked"), true, state)
+  else if instr.opcode == op.LOAD_IMM64 then
+    let old = read_reg(state, instr.rd) in
+    let newv = ty.fardval_int(instr.imm64) in
+    let s2 = write_reg(state, instr.rd, newv) in
+    transition_result(state.pc + 16, state.flags, state.privilege, [], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.ADD_SLOT then
+    let lhs = read_reg(state, instr.rd) in
+    let rhs = read_reg(state, instr.imm64) in
+    if lhs.tag != ty.TAG_INT || rhs.tag != ty.TAG_INT then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rd, value: lhs}, {reg_index: instr.imm64, value: rhs}], [], [], [], event.result_digest_unit(), event.trap_digest(2, "badtag"), true, state)
+    else
+      let old = lhs in
+      let newv = ty.fardval_int(lhs.payload + rhs.payload) in
+      let s2 = write_reg(state, instr.rd, newv) in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rd, value: lhs}, {reg_index: instr.imm64, value: rhs}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.FVAL_BOX_I64 then
+    let src = read_reg(state, instr.rs1) in
+    let old = read_reg(state, instr.rd) in
+    let newv = ty.fardval_int(src.payload) in
+    let s2 = write_reg(state, instr.rd, newv) in
+    transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: src}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.FVAL_UNBOX_I64 then
+    let src = read_reg(state, instr.rs1) in
+    let old = read_reg(state, instr.rd) in
+    if src.tag != ty.TAG_INT then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: src}], [], [], [], event.result_digest_unit(), event.trap_digest(3, "unbox_non_int"), true, state)
+    else
+      let newv = ty.fardval_int(src.payload) in
+      let s2 = write_reg(state, instr.rd, newv) in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: src}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.CMP_ZERO then
+    let v = read_reg(state, instr.imm64) in
+    let flags2 = if v.payload == 0 then 1 else 0 in
+    transition_result(state.pc + 16, flags2, state.privilege, [{reg_index: instr.imm64, value: v}], [], [], [], event.result_digest_value(ty.fardval_int(flags2)), event.trap_digest_none(), false, { ...state, flags: flags2 })
+  else if instr.opcode == op.BR_NE then
+    let taken = state.flags != 1 in
+    let next = if taken then instr.imm64 else state.pc + 16 in
+    transition_result(next, state.flags, state.privilege, [], [], [], [], event.result_digest_branch(state.pc, next, taken), event.trap_digest_none(), false, state)
+  else if instr.opcode == op.BR_UNCOND then
+    transition_result(instr.imm64, state.flags, state.privilege, [], [], [], [], event.result_digest_branch(state.pc, instr.imm64, true), event.trap_digest_none(), false, state)
+  else if instr.opcode == op.TRUST_READ then
+    let old = read_reg(state, instr.rd) in
+    let digest_num = str.len(state.receipt) in
+    let newv = ty.fardval_int(digest_num) in
+    let s2 = write_reg(state, instr.rd, newv) in
+    transition_result(state.pc + 16, state.flags, state.privilege, [], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.TRUST_LOCK then
+    transition_result(state.pc + 16, state.flags, state.privilege, [], [], [], [], event.result_digest_unit(), event.trap_digest_none(), false, { ...state, locked: true })
+  else if instr.opcode == op.TRUST_FINALIZE then
+    let final_state_d = event.state_post_digest(state.pc, state.flags, state.privilege, event.reg_write_digest([]), event.memory_write_digest([]), state.memory_root) in
+    let output_d = event.result_digest_unit() in
+    let epoch_d = trust.epoch_digest(state.receipt, state.receipt, final_state_d, output_d, 0) in
+    transition_result(state.pc + 16, state.flags, state.privilege, [], [], [], [], epoch_d, event.trap_digest_none(), true, { ...state, prior_epoch_digest: epoch_d, halted: true })
+  else if instr.opcode == op.HALT then
+    transition_result(state.pc, state.flags, state.privilege, [], [], [], [], event.result_digest_unit(), event.trap_digest_none(), true, { ...state, halted: true })
+  else
+    transition_result(state.pc, state.flags, state.privilege, [], [], [], [], event.result_digest_unit(), event.trap_digest(255, ty.hex16(instr.opcode)), true, state)
+}
+
+fn step(state, program) {
+  if state.halted then panic("cannot step halted state") else
+  let before = state in
+  let instr = fetch(program, before.pc) in
+  let tr = execute(before, instr) in
+
+  let reg_read_d = event.reg_read_digest(tr.reg_reads) in
+  let reg_write_d = event.reg_write_digest(tr.reg_writes) in
+  let mem_read_d = event.memory_read_digest(tr.mem_reads) in
+  let mem_write_d = event.memory_write_digest(tr.mem_writes) in
+  let operand_d = event.operand_digest(instr.operands) in
+
+  let event_obj = event.instruction_event(
+    before.epoch_id,
+    before.seq,
+    before.pc,
+    tr.next_pc,
+    before.privilege,
+    tr.privilege_after,
+    instr.opcode,
+    operand_d,
+    reg_read_d,
+    reg_write_d,
+    mem_read_d,
+    mem_write_d,
+    before.flags,
+    tr.flags_after,
+    tr.result_digest,
+    tr.trap_digest,
+    before.memory_root,
+    tr.extra_state.memory_root
+  ) in
+
+  let event_d = event.event_digest(event_obj) in
+  let receipt_after = event.receipt_next(before.receipt, event_d) in
+  let after0 = tr.extra_state in
+  let after = {
+    ...after0,
+    pc: tr.next_pc,
+    flags: tr.flags_after,
+    privilege: tr.privilege_after,
+    seq: before.seq + 1,
+    receipt: receipt_after,
+    halted: tr.halted || after0.halted,
+    events: list.append(before.events, [{ event: event_obj, digest: event_d }])
+  } in
+  { state_before: before, instr: instr, transition: tr, event: event_obj, event_digest: event_d, receipt_before: before.receipt, receipt_after: receipt_after, state_after: after }
+}
+
+fn run(program, state, max_steps) {
+  let loop = while { state: state, steps: 0 } fn(s) {
+    (!s.state.halted) && s.steps < max_steps
+  } fn(s) {
+    let r = step(s.state, program) in
+    { state: r.state_after, steps: s.steps + 1 }
+  } in
+  loop.value.state
+}
+
+export { fetch, execute, step, run }

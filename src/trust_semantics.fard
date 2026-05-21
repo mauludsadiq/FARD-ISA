@@ -1,0 +1,37 @@
+import("std/hash") as hash
+import("std/str") as str
+import("canonical_event_v1") as event
+import("fard_isa_types") as ty
+
+fn epoch_digest(epoch_genesis, r_final, final_state_digest, output_digest, exit_code) {
+  event.require_digest(epoch_genesis, "epoch_genesis") |
+  event.require_digest(r_final, "r_final") |
+  event.require_digest(final_state_digest, "final_state_digest") |
+  event.require_digest(output_digest, "output_digest") |
+  hash.sha256_text(str.concat([
+    "FARD.EPOCH.v1",
+    epoch_genesis,
+    r_final,
+    final_state_digest,
+    output_digest,
+    ty.hex64(exit_code)
+  ]))
+}
+
+fn attest(chip_id, rom_root, privilege, epoch_id, prior_epoch_digest, current_r, counter) {
+  event.require_digest(rom_root, "rom_root") |
+  event.require_digest(prior_epoch_digest, "prior_epoch_digest") |
+  event.require_digest(current_r, "current_r") |
+  hash.sha256_text(str.concat([
+    "FARD.ATTEST.v1",
+    chip_id,
+    rom_root,
+    ty.hex8(privilege),
+    ty.hex64(epoch_id),
+    prior_epoch_digest,
+    current_r,
+    ty.hex64(counter)
+  ]))
+}
+
+export { epoch_digest, attest }

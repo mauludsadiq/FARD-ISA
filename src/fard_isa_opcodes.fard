@@ -1,0 +1,65 @@
+import("std/rec") as rec
+
+let LOAD_IMM64   = 256
+let LOAD_SLOT    = 257
+let STORE_SLOT   = 258
+let STORE_PARAM  = 259
+let LOAD_ARG     = 260
+
+let ADD_SLOT     = 512
+let CMP_ZERO     = 513
+
+let FVAL_BOX_I64   = 768
+let FVAL_UNBOX_I64 = 769
+let FVAL_CHECK_TAG = 770
+
+let BR_NE      = 1024
+let BR_UNCOND  = 1025
+
+let CALL_REL32 = 1280
+let RET_I64    = 1281
+
+let TRUST_READ     = 1536
+let TRUST_FINALIZE = 1537
+let TRUST_LOCK     = 1538
+let TRUST_ATTEST   = 1539
+let TRUST_VERIFY   = 1540
+
+let TRAP = 1792
+let HALT = 1793
+
+fn name(op) {
+  if op == LOAD_IMM64 then "LOAD.IMM64" else
+  if op == LOAD_SLOT then "LOAD.SLOT" else
+  if op == STORE_SLOT then "STORE.SLOT" else
+  if op == STORE_PARAM then "STORE.PARAM" else
+  if op == LOAD_ARG then "LOAD.ARG" else
+  if op == ADD_SLOT then "ADD.SLOT" else
+  if op == CMP_ZERO then "CMP.ZERO" else
+  if op == FVAL_BOX_I64 then "FVAL.BOX_I64" else
+  if op == FVAL_UNBOX_I64 then "FVAL.UNBOX_I64" else
+  if op == FVAL_CHECK_TAG then "FVAL.CHECK_TAG" else
+  if op == BR_NE then "BR.NE" else
+  if op == BR_UNCOND then "BR.UNCOND" else
+  if op == CALL_REL32 then "CALL.REL32" else
+  if op == RET_I64 then "RET.I64" else
+  if op == TRUST_READ then "TRUST.READ" else
+  if op == TRUST_FINALIZE then "TRUST.FINALIZE" else
+  if op == TRUST_LOCK then "TRUST.LOCK" else
+  if op == TRUST_ATTEST then "TRUST.ATTEST" else
+  if op == TRUST_VERIFY then "TRUST.VERIFY" else
+  if op == TRAP then "TRAP" else
+  if op == HALT then "HALT" else
+  "UNKNOWN"
+}
+
+export {
+  LOAD_IMM64, LOAD_SLOT, STORE_SLOT, STORE_PARAM, LOAD_ARG,
+  ADD_SLOT, CMP_ZERO,
+  FVAL_BOX_I64, FVAL_UNBOX_I64, FVAL_CHECK_TAG,
+  BR_NE, BR_UNCOND,
+  CALL_REL32, RET_I64,
+  TRUST_READ, TRUST_FINALIZE, TRUST_LOCK, TRUST_ATTEST, TRUST_VERIFY,
+  TRAP, HALT,
+  name
+}

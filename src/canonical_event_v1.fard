@@ -1,0 +1,245 @@
+import("std/hash") as hash
+import("std/str") as str
+import("std/list") as list
+import("std/rec") as rec
+import("std/int") as int
+import("std/type") as type
+import("fard_isa_types") as ty
+
+let VERSION = 1
+let EVENT_KIND_INSTRUCTION = 1
+let TERMINATOR = 241
+let ZERO_DIGEST = ty.zero_digest()
+
+fn require_digest(d, label) {
+  if type.of(d) != "text" then panic(str.concat([label, ": digest must be text"])) else
+  if str.starts_with(d, "sha256:") && str.len(d) == 71 then d else
+  panic(str.concat([label, ": digest must be sha256:<64hex>"]))
+}
+
+fn u8_hex(n) {
+  ty.hex8(n)
+}
+
+fn u16_hex(n) {
+  ty.hex16(n)
+}
+
+fn u32_hex(n) {
+  ty.hex32(n)
+}
+
+fn u64_hex(n) {
+  ty.hex64(n)
+}
+
+fn digest_hex(d) {
+  let x = require_digest(d, "digest_hex") in
+  str.slice(x, 7, str.len(x))
+}
+
+fn event_pack_hex(e) {
+  require_digest(e.operand_digest, "operand_digest") |
+  require_digest(e.register_read_digest, "register_read_digest") |
+  require_digest(e.register_write_digest, "register_write_digest") |
+  require_digest(e.memory_read_digest, "memory_read_digest") |
+  require_digest(e.memory_write_digest, "memory_write_digest") |
+  require_digest(e.result_digest, "result_digest") |
+  require_digest(e.trap_digest, "trap_digest") |
+  require_digest(e.state_pre_digest, "state_pre_digest") |
+  require_digest(e.state_post_digest, "state_post_digest") |
+
+  str.concat([
+    u32_hex(VERSION),
+    u8_hex(EVENT_KIND_INSTRUCTION),
+    u64_hex(e.epoch_id),
+    u64_hex(e.seq),
+    u64_hex(e.pc_before),
+    u64_hex(e.pc_after),
+    u8_hex(e.privilege_before),
+    u8_hex(e.privilege_after),
+    u16_hex(e.opcode),
+    digest_hex(e.operand_digest),
+    digest_hex(e.register_read_digest),
+    digest_hex(e.register_write_digest),
+    digest_hex(e.memory_read_digest),
+    digest_hex(e.memory_write_digest),
+    u64_hex(e.flags_before),
+    u64_hex(e.flags_after),
+    digest_hex(e.result_digest),
+    digest_hex(e.trap_digest),
+    digest_hex(e.state_pre_digest),
+    digest_hex(e.state_post_digest),
+    u64_hex(0),
+    u8_hex(TERMINATOR)
+  ])
+}
+
+fn event_pack(e) {
+  let h = event_pack_hex(e) in
+  if str.len(h) != 708 then panic("event_pack: CanonicalEventV1 must be 354 bytes / 708 hex chars") else
+  h
+}
+
+fn event_digest(e) {
+  hash.sha256_text(str.concat(["FARD.EVENT.v1", event_pack(e)]))
+}
+
+fn receipt_next(r_current, event_d) {
+  require_digest(r_current, "r_current") |
+  require_digest(event_d, "event_digest") |
+  hash.sha256_text(str.concat(["FARD.RECEIPT.v1", r_current, event_d]))
+}
+
+fn reg_read_digest(reads) {
+  let sorted = list.sort_by_int_key(list.map(reads, fn(r) { { k: r.reg_index, v: r } }), fn(x) { x.k }) |> list.map(fn(x) { x.v }) in
+  let body = list.fold(sorted, "", fn(acc, r) {
+    let v = ty.ensure_fardval(r.value) in
+    str.concat([acc, u16_hex(r.reg_index), v.hex])
+  }) in
+  hash.sha256_text(str.concat(["FARD.REG.READ.v1", u16_hex(list.len(sorted)), body]))
+}
+
+fn reg_write_digest(writes) {
+  let sorted = list.sort_by_int_key(list.map(writes, fn(w) { { k: w.reg_index, v: w } }), fn(x) { x.k }) |> list.map(fn(x) { x.v }) in
+  let body = list.fold(sorted, "", fn(acc, w) {
+    let oldv = ty.ensure_fardval(w.old_value) in
+    let newv = ty.ensure_fardval(w.new_value) in
+    str.concat([acc, u16_hex(w.reg_index), oldv.hex, newv.hex])
+  }) in
+  hash.sha256_text(str.concat(["FARD.REG.WRITE.v1", u16_hex(list.len(sorted)), body]))
+}
+
+fn operand_digest(operands) {
+  let body = list.fold(operands, "", fn(acc, op) {
+    str.concat([acc, u8_hex(op.kind), u8_hex(op.width), op.bytes])
+  }) in
+  hash.sha256_text(str.concat(["FARD.OPERAND.v1", u16_hex(list.len(operands)), body]))
+}
+
+fn memory_read_digest(reads) {
+  let body = list.fold(reads, "", fn(acc, r) {
+    require_digest(r.memory_root_before, "memory_root_before") |
+    require_digest(r.page_proof_digest, "page_proof_digest") |
+    str.concat([
+      acc,
+      u64_hex(r.addr),
+      u16_hex(r.width),
+      r.value_hex,
+      digest_hex(r.memory_root_before),
+      digest_hex(r.page_proof_digest)
+    ])
+  }) in
+  hash.sha256_text(str.concat(["FARD.MEM.READ.v1", u16_hex(list.len(reads)), body]))
+}
+
+fn memory_write_digest(writes) {
+  let body = list.fold(writes, "", fn(acc, w) {
+    require_digest(w.memory_root_before, "memory_root_before") |
+    require_digest(w.memory_root_after, "memory_root_after") |
+    require_digest(w.page_proof_digest, "page_proof_digest") |
+    str.concat([
+      acc,
+      u64_hex(w.addr),
+      u16_hex(w.width),
+      w.old_value_hex,
+      w.new_value_hex,
+      digest_hex(w.memory_root_before),
+      digest_hex(w.memory_root_after),
+      digest_hex(w.page_proof_digest)
+    ])
+  }) in
+  hash.sha256_text(str.concat(["FARD.MEM.WRITE.v1", u16_hex(list.len(writes)), body]))
+}
+
+fn state_pre_digest(pc_before, flags_before, privilege_before, reg_read_d, mem_read_d, memory_root_before) {
+  require_digest(reg_read_d, "reg_read_d") |
+  require_digest(mem_read_d, "mem_read_d") |
+  require_digest(memory_root_before, "memory_root_before") |
+  hash.sha256_text(str.concat([
+    "FARD.STATE.PRE.v1",
+    u64_hex(pc_before),
+    u64_hex(flags_before),
+    u8_hex(privilege_before),
+    reg_read_d,
+    mem_read_d,
+    memory_root_before
+  ]))
+}
+
+fn state_post_digest(pc_after, flags_after, privilege_after, reg_write_d, mem_write_d, memory_root_after) {
+  require_digest(reg_write_d, "reg_write_d") |
+  require_digest(mem_write_d, "mem_write_d") |
+  require_digest(memory_root_after, "memory_root_after") |
+  hash.sha256_text(str.concat([
+    "FARD.STATE.POST.v1",
+    u64_hex(pc_after),
+    u64_hex(flags_after),
+    u8_hex(privilege_after),
+    reg_write_d,
+    mem_write_d,
+    memory_root_after
+  ]))
+}
+
+fn trap_digest_none() {
+  ZERO_DIGEST
+}
+
+fn trap_digest(cause, info_hex) {
+  hash.sha256_text(str.concat(["FARD.TRAP.v1", u32_hex(cause), info_hex]))
+}
+
+fn result_digest_value(v) {
+  let fv = ty.ensure_fardval(v) in
+  hash.sha256_text(str.concat(["FARD.RESULT.VALUE.v1", fv.hex]))
+}
+
+fn result_digest_branch(pc_before, pc_after, taken) {
+  hash.sha256_text(str.concat([
+    "FARD.RESULT.BRANCH.v1",
+    u64_hex(pc_before),
+    u64_hex(pc_after),
+    u8_hex(if taken then 1 else 0)
+  ]))
+}
+
+fn result_digest_unit() {
+  hash.sha256_text("FARD.RESULT.UNIT.v1")
+}
+
+fn instruction_event(epoch_id, seq, pc_before, pc_after, privilege_before, privilege_after, opcode, operand_d, reg_read_d, reg_write_d, mem_read_d, mem_write_d, flags_before, flags_after, result_d, trap_d, memory_root_before, memory_root_after) {
+  let pre = state_pre_digest(pc_before, flags_before, privilege_before, reg_read_d, mem_read_d, memory_root_before) in
+  let post = state_post_digest(pc_after, flags_after, privilege_after, reg_write_d, mem_write_d, memory_root_after) in
+  {
+    epoch_id: epoch_id,
+    seq: seq,
+    pc_before: pc_before,
+    pc_after: pc_after,
+    privilege_before: privilege_before,
+    privilege_after: privilege_after,
+    opcode: opcode,
+    operand_digest: operand_d,
+    register_read_digest: reg_read_d,
+    register_write_digest: reg_write_d,
+    memory_read_digest: mem_read_d,
+    memory_write_digest: mem_write_d,
+    flags_before: flags_before,
+    flags_after: flags_after,
+    result_digest: result_d,
+    trap_digest: trap_d,
+    state_pre_digest: pre,
+    state_post_digest: post
+  }
+}
+
+export {
+  VERSION, EVENT_KIND_INSTRUCTION, TERMINATOR, ZERO_DIGEST,
+  require_digest, event_pack_hex, event_pack, event_digest, receipt_next,
+  reg_read_digest, reg_write_digest, operand_digest,
+  memory_read_digest, memory_write_digest,
+  state_pre_digest, state_post_digest,
+  trap_digest_none, trap_digest,
+  result_digest_value, result_digest_branch, result_digest_unit,
+  instruction_event
+}

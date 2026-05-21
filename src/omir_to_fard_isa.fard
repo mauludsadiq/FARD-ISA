@@ -1,0 +1,97 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+import("fard_isa_opcodes") as op
+import("fard_isa_types") as ty
+
+fn operand(kind, width, hex_bytes) {
+  { kind: kind, width: width, bytes: hex_bytes }
+}
+
+fn isa_instr(opcode, rd, rs1, rs2, imm64, operands) {
+  {
+    opcode: opcode,
+    rd: rd,
+    rs1: rs1,
+    rs2: rs2,
+    imm64: imm64,
+    operands: operands
+  }
+}
+
+fn map_omir(omir) {
+  let k = omir.kind in
+
+  if k == "mov_imm64" then
+    isa_instr(op.LOAD_IMM64, omir.dst, 0, 0, omir.val, [
+      operand(1, 16, ty.hex16(omir.dst)),
+      operand(2, 64, ty.hex64(omir.val))
+    ])
+  else if k == "mov_stack_to_reg" then
+    isa_instr(op.LOAD_SLOT, omir.dst, 0, 0, omir.slot, [
+      operand(1, 16, ty.hex16(omir.dst)),
+      operand(3, 64, ty.hex64(omir.slot))
+    ])
+  else if k == "mov_reg_to_stack" then
+    isa_instr(op.STORE_SLOT, omir.src, 0, 0, omir.slot, [
+      operand(1, 16, ty.hex16(omir.src)),
+      operand(3, 64, ty.hex64(omir.slot))
+    ])
+  else if k == "add_reg_stack" then
+    isa_instr(op.ADD_SLOT, omir.dst, 0, 0, omir.slot, [
+      operand(1, 16, ty.hex16(omir.dst)),
+      operand(3, 64, ty.hex64(omir.slot))
+    ])
+  else if k == "cmp_stack_zero" then
+    isa_instr(op.CMP_ZERO, 0, 0, 0, omir.slot, [
+      operand(3, 64, ty.hex64(omir.slot))
+    ])
+  else if k == "store_param" then
+    isa_instr(op.STORE_PARAM, omir.arg_idx, 0, 0, omir.slot, [
+      operand(4, 16, ty.hex16(omir.arg_idx)),
+      operand(3, 64, ty.hex64(omir.slot))
+    ])
+  else if k == "load_arg" then
+    isa_instr(op.LOAD_ARG, omir.arg_idx, 0, 0, omir.slot, [
+      operand(4, 16, ty.hex16(omir.arg_idx)),
+      operand(3, 64, ty.hex64(omir.slot))
+    ])
+  else if k == "write_fval_int" then
+    isa_instr(op.FVAL_BOX_I64, omir.dst, omir.src, 0, 0, [
+      operand(1, 16, ty.hex16(omir.dst)),
+      operand(1, 16, ty.hex16(omir.src))
+    ])
+  else if k == "unbox_int" then
+    isa_instr(op.FVAL_UNBOX_I64, omir.dst, omir.src, 0, 0, [
+      operand(1, 16, ty.hex16(omir.dst)),
+      operand(1, 16, ty.hex16(omir.src))
+    ])
+  else if k == "jne" then
+    isa_instr(op.BR_NE, 0, 0, 0, omir.target, [
+      operand(5, 64, ty.hex64(omir.target))
+    ])
+  else if k == "jmp" then
+    isa_instr(op.BR_UNCOND, 0, 0, 0, omir.target, [
+      operand(5, 64, ty.hex64(omir.target))
+    ])
+  else if k == "call_reloc" then
+    isa_instr(op.CALL_REL32, 0, 0, 0, omir.target, [
+      operand(5, 64, ty.hex64(omir.target))
+    ])
+  else if k == "ret_i64" then
+    isa_instr(op.RET_I64, omir.src, 0, 0, 0, [
+      operand(1, 16, ty.hex16(omir.src))
+    ])
+  else if k == "bind_label" then
+    { pseudo: true, label: omir.label }
+  else
+    panic(str.concat(["unknown OMIR op: ", k]))
+}
+
+fn map_program(omir_ops) {
+  list.filter(list.map(omir_ops, map_omir), fn(x) {
+    !(rec.has(x, "pseudo") && x.pseudo)
+  })
+}
+
+export { operand, isa_instr, map_omir, map_program }

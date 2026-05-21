@@ -1,0 +1,118 @@
+import("std/bytes") as bytes
+import("std/hash") as hash
+import("std/str") as str
+import("std/list") as list
+import("std/rec") as rec
+import("std/map") as map
+import("std/int") as int
+import("std/json") as json
+import("std/type") as type
+
+let TAG_INT = 0
+let TAG_BOOL = 1
+let TAG_UNIT = 2
+
+fn hex64(n) {
+  str.pad_left(int.to_hex(n), 16, "0")
+}
+
+fn hex32(n) {
+  str.pad_left(int.to_hex(n), 8, "0")
+}
+
+fn hex16(n) {
+  str.pad_left(int.to_hex(n), 4, "0")
+}
+
+fn hex8(n) {
+  str.pad_left(int.to_hex(n), 2, "0")
+}
+
+fn sha256_hex_payload(hex_payload) {
+  hash.sha256_text(hex_payload)
+}
+
+fn zero_digest() {
+  "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}
+
+fn fardval_int(n) {
+  {
+    tag: TAG_INT,
+    pad: 0,
+    payload: n,
+    hex: str.concat([hex32(TAG_INT), hex32(0), hex64(n)])
+  }
+}
+
+fn fardval_bool(b) {
+  let v = if b then 1 else 0 in
+  {
+    tag: TAG_BOOL,
+    pad: 0,
+    payload: v,
+    hex: str.concat([hex32(TAG_BOOL), hex32(0), hex64(v)])
+  }
+}
+
+fn fardval_unit() {
+  {
+    tag: TAG_UNIT,
+    pad: 0,
+    payload: 0,
+    hex: str.concat([hex32(TAG_UNIT), hex32(0), hex64(0)])
+  }
+}
+
+fn ensure_fardval(v) {
+  if type.of(v) != "record" then panic("expected FardVal record") else
+  if rec.has(v, "tag") && rec.has(v, "payload") && rec.has(v, "hex") then v else
+  panic("malformed FardVal")
+}
+
+fn reg_get(regs, idx) {
+  rec.getOr(regs, str.from(idx), fardval_unit())
+}
+
+fn reg_set(regs, idx, value) {
+  rec.set(regs, str.from(idx), ensure_fardval(value))
+}
+
+fn mem_get(mem, addr) {
+  rec.getOr(mem, str.from(addr), 0)
+}
+
+fn mem_set(mem, addr, byte) {
+  rec.set(mem, str.from(addr), byte)
+}
+
+fn memory_root(mem) {
+  hash.sha256_text(json.canonicalize(mem))
+}
+
+fn initial_state(epoch_id, epoch_genesis) {
+  {
+    epoch_id: epoch_id,
+    seq: 0,
+    pc: 0,
+    flags: 0,
+    privilege: 0,
+    regs: {},
+    memory: {},
+    memory_root: memory_root({}),
+    receipt: epoch_genesis,
+    halted: false,
+    locked: false,
+    prior_epoch_digest: zero_digest(),
+    events: []
+  }
+}
+
+export {
+  TAG_INT, TAG_BOOL, TAG_UNIT,
+  hex64, hex32, hex16, hex8,
+  zero_digest,
+  fardval_int, fardval_bool, fardval_unit, ensure_fardval,
+  reg_get, reg_set, mem_get, mem_set, memory_root,
+  initial_state
+}

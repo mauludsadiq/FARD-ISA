@@ -1,0 +1,31 @@
+import("../src/fard_isa_opcodes") as op
+import("../src/fard_isa_types") as ty
+import("../src/omir_to_fard_isa") as lower
+import("../src/fard_isa_sim") as sim
+import("std/list") as list
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+let program = [
+  lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 40, [
+    lower.operand(1, 16, ty.hex16(1)),
+    lower.operand(2, 64, ty.hex64(40))
+  ]),
+  lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 2, [
+    lower.operand(1, 16, ty.hex16(2)),
+    lower.operand(2, 64, ty.hex64(2))
+  ]),
+  lower.isa_instr(op.ADD_SLOT, 1, 0, 0, 2, [
+    lower.operand(1, 16, ty.hex16(1)),
+    lower.operand(3, 64, ty.hex64(2))
+  ]),
+  lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+]
+
+let final = sim.run(program, ty.initial_state(1, genesis), 20)
+
+{
+  result: final.regs["1"].payload,
+  receipt: final.receipt,
+  events: list.len(final.events)
+}

@@ -1,0 +1,12 @@
+import("../src/omir_to_fard_isa") as lower
+import("../src/fard_isa_opcodes") as op
+
+test "map mov_imm64 to LOAD.IMM64" {
+  let i = lower.map_omir({ kind: "mov_imm64", dst: 1, val: 42 }) in
+  i.opcode == op.LOAD_IMM64
+}
+
+test "bind_label is pseudo" {
+  let i = lower.map_omir({ kind: "bind_label", label: "L0" }) in
+  i.pseudo == true
+}

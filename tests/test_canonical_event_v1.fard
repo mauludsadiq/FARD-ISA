@@ -1,0 +1,35 @@
+import("../src/canonical_event_v1") as event
+import("../src/fard_isa_types") as ty
+import("std/str") as str
+import("std/int") as int
+
+test "canonical event packs to 354 bytes hex" {
+  let d = event.ZERO_DIGEST
+  let e = {
+    epoch_id: 1,
+    seq: 0,
+    pc_before: 0,
+    pc_after: 16,
+    privilege_before: 0,
+    privilege_after: 0,
+    opcode: 256,
+    operand_digest: d,
+    register_read_digest: event.reg_read_digest([]),
+    register_write_digest: event.reg_write_digest([]),
+    memory_read_digest: event.memory_read_digest([]),
+    memory_write_digest: event.memory_write_digest([]),
+    flags_before: 0,
+    flags_after: 0,
+    result_digest: event.result_digest_unit(),
+    trap_digest: event.trap_digest_none(),
+    state_pre_digest: d,
+    state_post_digest: d
+  }
+  str.len(event.event_pack(e)) == 708
+}
+
+test "receipt advances" {
+  let r0 = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  let ed = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  event.receipt_next(r0, ed) != r0
+}
