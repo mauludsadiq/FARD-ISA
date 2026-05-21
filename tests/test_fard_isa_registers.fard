@@ -1,0 +1,29 @@
+import("../src/fard_isa_registers") as regs
+import("../src/fard_isa_types") as ty
+
+test "register count is 32" {
+  regs.REG_COUNT == 32
+}
+
+test "valid registers are 0 through 31" {
+  regs.valid_reg(0) && regs.valid_reg(31) && !regs.valid_reg(32)
+}
+
+test "r_zero reads unit" {
+  let rf = {} in
+  regs.read(rf, regs.R_ZERO).tag == ty.TAG_UNIT
+}
+
+test "writes to r_zero are ignored" {
+  let rf = regs.write({}, regs.R_ZERO, ty.fardval_int(42)) in
+  regs.read(rf, regs.R_ZERO).tag == ty.TAG_UNIT
+}
+
+test "write then read normal register" {
+  let rf = regs.write({}, regs.R_RET, ty.fardval_int(42)) in
+  regs.read(rf, regs.R_RET).payload == 42
+}
+
+test "abi arg register mapping" {
+  regs.abi_arg_reg(0) == regs.R_ARG0 && regs.abi_arg_reg(5) == regs.R_ARG5
+}

@@ -1,0 +1,71 @@
+import("std/str") as str
+import("std/list") as list
+import("fard_isa_types") as ty
+
+let REG_COUNT = 32
+
+let R_ZERO = 0
+let R_RET  = 1
+let R_ARG0 = 2
+let R_ARG1 = 3
+let R_ARG2 = 4
+let R_ARG3 = 5
+let R_ARG4 = 6
+let R_ARG5 = 7
+let R_TMP0 = 8
+let R_TMP1 = 9
+let R_FP   = 30
+let R_SP   = 31
+
+fn valid_reg(r) {
+  r >= 0 && r < REG_COUNT
+}
+
+fn require_reg(r) {
+  if valid_reg(r) then r else panic(str.concat(["invalid register: ", str.from(r)]))
+}
+
+fn read(regs, r) {
+  let rr = require_reg(r) in
+  if rr == R_ZERO then ty.fardval_unit() else ty.reg_get(regs, rr)
+}
+
+fn write(regs, r, value) {
+  let rr = require_reg(r) in
+  if rr == R_ZERO then regs else ty.reg_set(regs, rr, value)
+}
+
+fn abi_arg_reg(i) {
+  if i == 0 then R_ARG0 else
+  if i == 1 then R_ARG1 else
+  if i == 2 then R_ARG2 else
+  if i == 3 then R_ARG3 else
+  if i == 4 then R_ARG4 else
+  if i == 5 then R_ARG5 else
+  panic("abi_arg_reg: only 0..5 supported in v1")
+}
+
+fn name(r) {
+  let rr = require_reg(r) in
+  if rr == R_ZERO then "r_zero" else
+  if rr == R_RET then "r_ret" else
+  if rr == R_ARG0 then "r_arg0" else
+  if rr == R_ARG1 then "r_arg1" else
+  if rr == R_ARG2 then "r_arg2" else
+  if rr == R_ARG3 then "r_arg3" else
+  if rr == R_ARG4 then "r_arg4" else
+  if rr == R_ARG5 then "r_arg5" else
+  if rr == R_TMP0 then "r_tmp0" else
+  if rr == R_TMP1 then "r_tmp1" else
+  if rr == R_FP then "r_fp" else
+  if rr == R_SP then "r_sp" else
+  str.concat(["r", str.from(rr)])
+}
+
+export {
+  REG_COUNT,
+  R_ZERO, R_RET,
+  R_ARG0, R_ARG1, R_ARG2, R_ARG3, R_ARG4, R_ARG5,
+  R_TMP0, R_TMP1, R_FP, R_SP,
+  valid_reg, require_reg, read, write, abi_arg_reg, name
+}

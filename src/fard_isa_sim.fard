@@ -4,6 +4,7 @@ import("std/str") as str
 import("canonical_event_v1") as event
 import("fard_isa_opcodes") as op
 import("fard_isa_types") as ty
+import("fard_isa_registers") as regs
 import("trust_semantics") as trust
 
 fn pc_index(pc) {
@@ -16,11 +17,11 @@ fn fetch(program, pc) {
 }
 
 fn read_reg(state, idx) {
-  ty.reg_get(state.regs, idx)
+  regs.read(state.regs, idx)
 }
 
 fn write_reg(state, idx, value) {
-  { ...state, regs: ty.reg_set(state.regs, idx, value) }
+  { ...state, regs: regs.write(state.regs, idx, value) }
 }
 
 fn empty_mem_read_root(state) {
