@@ -143,7 +143,7 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 - [x] Trust instructions in simulator (READ, FINALIZE, LOCK, ATTEST, VERIFY)
 - [x] Full canonical event emission for every instruction
 - [x] Epoch sealing in simulator
-- [ ] Simulator verified against golden interpreter on 10+ programs
+- [x] Simulator verified against golden interpreter on 10+ programs
 
 ### Phase 3 — Golden Interpreter Verification
 

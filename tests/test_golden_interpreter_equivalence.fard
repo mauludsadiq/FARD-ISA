@@ -1,0 +1,137 @@
+import("../src/fard_isa_sim") as sim
+import("../src/fard_isa_types") as ty
+import("../src/canonical_event_v1") as event
+import("../src/omir_to_fard_isa") as lower
+import("../src/fard_isa_opcodes") as op
+import("std/list") as list
+
+fn golden_step(receipt, event_digest) {
+  event.receipt_next(receipt, event_digest)
+}
+
+fn golden_run(program, state, fuel) {
+  let final = sim.run(program, state, fuel) in
+  let recomputed = list.fold(final.events, state.receipt, fn(r, ev) {
+    golden_step(r, ev.digest)
+  }) in
+  {
+    final: final,
+    recomputed_receipt: recomputed
+  }
+}
+
+test "golden equivalence mov imm" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 42, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 10) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence add" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 40, []),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 2, []),
+    lower.isa_instr(op.ADD_SLOT, 1, 0, 0, 2, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 10) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence branch" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 1, []),
+    lower.isa_instr(op.CMP_ZERO, 0, 1, 0, 0, []),
+    lower.isa_instr(op.BR_NE, 0, 0, 0, 64, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence call ret" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.CALL_REL32, 0, 0, 0, 48, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, []),
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 9, []),
+    lower.isa_instr(op.RET_I64, 1, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence trust read" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 256, []),
+    lower.isa_instr(op.TRUST_READ, 0, 1, 0, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence trust verify success" {
+  let prior = "sha256:2222222222222222222222222222222222222222222222222222222222222222" in
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let s0 = {
+    ...ty.initial_state(1, genesis),
+    prior_epoch_digest: prior
+  } in
+  let p = [
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, s0, 10) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence trust attest" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 1024, []),
+    lower.isa_instr(op.TRUST_ATTEST, 0, 1, 0, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence box unbox" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 77, []),
+    lower.isa_instr(op.FVAL_BOX_I64, 2, 1, 0, 0, []),
+    lower.isa_instr(op.FVAL_UNBOX_I64, 3, 2, 0, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence load store param" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 88, []),
+    lower.isa_instr(op.LOAD_ARG, 1, 1, 0, 0, []),
+    lower.isa_instr(op.STORE_PARAM, 2, 0, 0, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence finalize" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.TRUST_FINALIZE, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
