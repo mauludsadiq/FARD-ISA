@@ -153,6 +153,16 @@ fn execute(state, instr) {
     let new_root = mem.memory_root(m3) in
     let write_d = { addr: addr_v.payload, width: 32, old_value_hex: str.repeat("00", 32), new_value_hex: h, memory_root_before: state.memory_root, memory_root_after: new_root, page_proof_digest: ty.zero_digest() } in
     transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [], [], [write_d], event.result_digest_value(addr_v), event.trap_digest_none(), false, { ...state, memory: m3, memory_root: new_root })
+  else if instr.opcode == op.TRUST_VERIFY then
+    let addr_v = read_reg(state, instr.rs1) in
+    let expected_h = str.concat(list.build(32, fn(i) { ty.hex8(mem.load_byte(state.memory, addr_v.payload + i)) })) in
+    let prior_h = str.slice(state.prior_epoch_digest, 7, str.len(state.prior_epoch_digest)) in
+    let ok = expected_h == prior_h in
+    let read_d = { addr: addr_v.payload, width: 32, value_hex: expected_h, memory_root_before: state.memory_root, page_proof_digest: ty.zero_digest() } in
+    if ok then
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [], [read_d], [], event.result_digest_value(ty.fardval_bool(true)), event.trap_digest_none(), false, state)
+    else
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [], [read_d], [], event.result_digest_value(ty.fardval_bool(false)), event.trap_digest(5, "trust_verify_failed"), true, state)
   else if instr.opcode == op.TRUST_LOCK then
     transition_result(state.pc + 16, state.flags, state.privilege, [], [], [], [], event.result_digest_unit(), event.trap_digest_none(), false, { ...state, locked: true })
   else if instr.opcode == op.TRUST_FINALIZE then
