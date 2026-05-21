@@ -2,6 +2,7 @@ import("../src/fard_isa_opcodes") as op
 import("../src/fard_isa_types") as ty
 import("../src/omir_to_fard_isa") as lower
 import("../src/fard_isa_sim") as sim
+import("std/list") as list
 
 test "sim add 40 and 2" {
   let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
@@ -22,4 +23,40 @@ test "sim add 40 and 2" {
   ] in
   let final = sim.run(program, ty.initial_state(1, genesis), 20) in
   final.regs["1"].payload == 42
+}
+
+test "sim FVAL.CHECK_TAG succeeds for int" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 42, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(42))
+    ]),
+    lower.isa_instr(op.FVAL_CHECK_TAG, 2, 1, 0, ty.TAG_INT, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(6, 32, ty.hex32(ty.TAG_INT))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  final.regs["2"].payload == 1
+}
+
+test "sim FVAL.CHECK_TAG traps on wrong tag" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 42, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(42))
+    ]),
+    lower.isa_instr(op.FVAL_CHECK_TAG, 2, 1, 0, ty.TAG_BOOL, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(6, 32, ty.hex32(ty.TAG_BOOL))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  final.halted == true && list.len(final.events) == 2
 }

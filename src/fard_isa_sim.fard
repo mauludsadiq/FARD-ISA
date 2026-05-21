@@ -80,6 +80,15 @@ fn execute(state, instr) {
       let newv = ty.fardval_int(src.payload) in
       let s2 = write_reg(state, instr.rd, newv) in
       transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: src}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.FVAL_CHECK_TAG then
+    let src = read_reg(state, instr.rs1) in
+    let old = read_reg(state, instr.rd) in
+    if src.tag == instr.imm64 then
+      let newv = ty.fardval_bool(true) in
+      let s2 = write_reg(state, instr.rd, newv) in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: src}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+    else
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: src}], [], [], [], event.result_digest_unit(), event.trap_digest(4, "check_tag_failed"), true, state)
   else if instr.opcode == op.CMP_ZERO then
     let v = read_reg(state, instr.imm64) in
     let flags2 = if v.payload == 0 then 1 else 0 in
