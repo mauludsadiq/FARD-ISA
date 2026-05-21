@@ -216,3 +216,92 @@ test "sim STORE_PARAM copies ABI arg register into destination register with eve
   store_param_ev.register_write_digest != empty_write &&
   final.receipt != genesis
 }
+
+test "sim BR_NE takes branch when CMP_ZERO clears zero flag" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 7, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(7))
+    ]),
+    lower.isa_instr(op.CMP_ZERO, 0, 0, 0, 1, [
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.BR_NE, 0, 0, 0, 64, [
+      lower.operand(5, 64, ty.hex64(64))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 111, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(2, 64, ty.hex64(111))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 222, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(2, 64, ty.hex64(222))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let branch_ev = list.get(final.events, 2) in
+  final.regs["2"].payload == 222 &&
+  branch_ev.opcode == op.BR_NE &&
+  branch_ev.event_obj.pc_after == 64 &&
+  list.len(final.events) == 5 &&
+  final.receipt != genesis
+}
+
+test "sim BR_NE falls through when CMP_ZERO sets zero flag" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 0, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(0))
+    ]),
+    lower.isa_instr(op.CMP_ZERO, 0, 0, 0, 1, [
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.BR_NE, 0, 0, 0, 80, [
+      lower.operand(5, 64, ty.hex64(80))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 111, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(2, 64, ty.hex64(111))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let branch_ev = list.get(final.events, 2) in
+  final.regs["2"].payload == 111 &&
+  branch_ev.opcode == op.BR_NE &&
+  branch_ev.event_obj.pc_after == 48 &&
+  list.len(final.events) == 5 &&
+  final.receipt != genesis
+}
+
+test "sim BR_UNCOND always jumps to target with canonical event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.BR_UNCOND, 0, 0, 0, 48, [
+      lower.operand(5, 64, ty.hex64(48))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 111, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(111))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 222, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(222))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 333, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(333))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let branch_ev = list.get(final.events, 0) in
+  final.regs["1"].payload == 333 &&
+  branch_ev.opcode == op.BR_UNCOND &&
+  branch_ev.event_obj.pc_after == 48 &&
+  list.len(final.events) == 3 &&
+  final.receipt != genesis
+}
