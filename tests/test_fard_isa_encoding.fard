@@ -1,0 +1,24 @@
+import("../src/fard_isa_encoding") as enc
+import("../src/fard_isa_opcodes") as op
+import("../src/omir_to_fard_isa") as lower
+import("../src/fard_isa_types") as ty
+import("std/str") as str
+
+test "encode instruction is fixed 16 bytes" {
+  let i = lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 42, []) in
+  str.len(enc.encode_instr(i)) == 32
+}
+
+test "decode instruction roundtrip fields" {
+  let i = lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 42, []) in
+  let d = enc.decode_instr(enc.encode_instr(i)) in
+  d.opcode == op.LOAD_IMM64 && d.rd == 1 && d.imm64 == 42
+}
+
+test "encode program concatenates fixed instructions" {
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 40, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  str.len(enc.encode_program(p)) == 64
+}
