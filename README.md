@@ -140,7 +140,7 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 - [x] STORE_PARAM and LOAD_ARG in simulator
 - [x] BR_NE and BR_UNCOND in simulator
 - [x] CALL_REL32 and RET_I64 in simulator
-- [ ] Trust instructions in simulator (READ, FINALIZE, LOCK, ATTEST, VERIFY)
+- [x] Trust instructions in simulator (READ, FINALIZE, LOCK, ATTEST, VERIFY)
 - [x] Full canonical event emission for every instruction
 - [x] Epoch sealing in simulator
 - [ ] Simulator verified against golden interpreter on 10+ programs
