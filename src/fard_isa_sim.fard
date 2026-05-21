@@ -6,6 +6,7 @@ import("fard_isa_opcodes") as op
 import("fard_isa_types") as ty
 import("fard_isa_registers") as regs
 import("fard_isa_memory") as mem
+import("fard_isa_encoding") as enc
 import("trust_semantics") as trust
 
 fn pc_index(pc) {
@@ -143,11 +144,15 @@ fn execute(state, instr) {
       let new_stack = list.take(rec.getOr(state, "call_stack", []), idx) in
       transition_result(return_pc, state.flags, state.privilege, [{reg_index: instr.rd, value: ret_v}], [], [], [], event.result_digest_value(ret_v), event.trap_digest_none(), false, { ...state, call_stack: new_stack })
   else if instr.opcode == op.TRUST_READ then
-    let old = read_reg(state, instr.rd) in
-    let digest_num = str.len(state.receipt) in
-    let newv = ty.fardval_int(digest_num) in
-    let s2 = write_reg(state, instr.rd, newv) in
-    transition_result(state.pc + 16, state.flags, state.privilege, [], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+    let addr_v = read_reg(state, instr.rs1) in
+    let h = str.slice(state.receipt, 7, str.len(state.receipt)) in
+    let bytes_hex = list.build(32, fn(i) { str.slice(h, i * 2, (i + 1) * 2) }) in
+    let m3 = list.fold(list.range(0, 32), state.memory, fn(m, i) {
+      mem.store_byte(m, addr_v.payload + i, enc.parse_hex(list.get(bytes_hex, i)))
+    }) in
+    let new_root = mem.memory_root(m3) in
+    let write_d = { addr: addr_v.payload, width: 32, old_value_hex: str.repeat("00", 32), new_value_hex: h, memory_root_before: state.memory_root, memory_root_after: new_root, page_proof_digest: ty.zero_digest() } in
+    transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [], [], [write_d], event.result_digest_value(addr_v), event.trap_digest_none(), false, { ...state, memory: m3, memory_root: new_root })
   else if instr.opcode == op.TRUST_LOCK then
     transition_result(state.pc + 16, state.flags, state.privilege, [], [], [], [], event.result_digest_unit(), event.trap_digest_none(), false, { ...state, locked: true })
   else if instr.opcode == op.TRUST_FINALIZE then

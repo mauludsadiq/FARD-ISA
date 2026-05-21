@@ -3,7 +3,9 @@ import("../src/fard_isa_types") as ty
 import("../src/omir_to_fard_isa") as lower
 import("../src/fard_isa_sim") as sim
 import("../src/canonical_event_v1") as event
+import("../src/fard_isa_memory") as mem
 import("std/list") as list
+import("std/str") as str
 
 test "sim add 40 and 2" {
   let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
@@ -365,5 +367,32 @@ test "sim RET_I64 with empty call stack halts as program return with event evide
   ret_ev.opcode == op.RET_I64 &&
   ret_ev.register_read_digest != event.reg_read_digest([]) &&
   list.len(final.events) == 2 &&
+  final.receipt != genesis
+}
+
+test "sim TRUST.READ writes full receipt digest to memory with canonical event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let empty_mem_write = event.memory_write_digest([]) in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 256, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(256))
+    ]),
+    lower.isa_instr(op.TRUST_READ, 0, 1, 0, 0, [
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let trust_ev = list.get(final.events, 1) in
+  let r_at_trust_read = event.receipt_next(genesis, list.get(final.events, 0).digest) in
+  let h = str.slice(r_at_trust_read, 7, str.len(r_at_trust_read)) in
+  let observed_h = str.concat(list.build(32, fn(i) {
+    ty.hex8(mem.load_byte(final.memory, 256 + i))
+  })) in
+  observed_h == h &&
+  trust_ev.opcode == op.TRUST_READ &&
+  trust_ev.memory_write_digest != empty_mem_write &&
+  final.memory_root != ty.memory_root({}) &&
   final.receipt != genesis
 }
