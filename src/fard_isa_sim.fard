@@ -153,6 +153,23 @@ fn execute(state, instr) {
     let new_root = mem.memory_root(m3) in
     let write_d = { addr: addr_v.payload, width: 32, old_value_hex: str.repeat("00", 32), new_value_hex: h, memory_root_before: state.memory_root, memory_root_after: new_root, page_proof_digest: ty.zero_digest() } in
     transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [], [], [write_d], event.result_digest_value(addr_v), event.trap_digest_none(), false, { ...state, memory: m3, memory_root: new_root })
+  else if instr.opcode == op.TRUST_ATTEST then
+    let addr_v = read_reg(state, instr.rs1) in
+    let chip_id = rec.getOr(state, "chip_id", "") in
+    let rom_root = rec.getOr(state, "rom_root", ty.zero_digest()) in
+    let counter = rec.getOr(state, "attest_counter", 0) in
+    if chip_id == "" || rom_root == ty.zero_digest() then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [], [], [], event.result_digest_unit(), event.trap_digest(6, "trust_attest_unprovisioned"), true, state)
+    else
+      let attest_d = trust.attest(chip_id, rom_root, state.privilege, state.epoch_id, state.prior_epoch_digest, state.receipt, counter) in
+      let h = str.slice(attest_d, 7, str.len(attest_d)) in
+      let bytes_hex = list.build(32, fn(i) { str.slice(h, i * 2, (i + 1) * 2) }) in
+      let m3 = list.fold(list.range(0, 32), state.memory, fn(m, i) {
+        mem.store_byte(m, addr_v.payload + i, enc.parse_hex(list.get(bytes_hex, i)))
+      }) in
+      let new_root = mem.memory_root(m3) in
+      let write_d = { addr: addr_v.payload, width: 32, old_value_hex: str.repeat("00", 32), new_value_hex: h, memory_root_before: state.memory_root, memory_root_after: new_root, attest_counter: counter, page_proof_digest: ty.zero_digest() } in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [], [], [write_d], attest_d, event.trap_digest_none(), false, { ...state, memory: m3, memory_root: new_root, attest_counter: counter + 1 })
   else if instr.opcode == op.TRUST_VERIFY then
     let addr_v = read_reg(state, instr.rs1) in
     let expected_h = str.concat(list.build(32, fn(i) { ty.hex8(mem.load_byte(state.memory, addr_v.payload + i)) })) in
@@ -232,7 +249,7 @@ fn run(program, state, max_steps) {
     let r = step(s.state, program) in
     { state: r.state_after, steps: s.steps + 1 }
   } in
-  { ...loop.value.state, call_stack: rec.getOr(loop.value.state, "call_stack", []) }
+  { ...loop.value.state, call_stack: rec.getOr(loop.value.state, "call_stack", []), attest_counter: rec.getOr(loop.value.state, "attest_counter", 0) }
 }
 
 export { fetch, execute, step, run }

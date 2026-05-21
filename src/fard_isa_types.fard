@@ -105,7 +105,11 @@ fn initial_state(epoch_id, epoch_genesis) {
     halted: false,
     locked: false,
     prior_epoch_digest: zero_digest(),
-    events: []
+      chip_id: "FARD_SIM_CHIP_V1",
+      rom_root: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      attest_counter: 0,
+      call_stack: [],
+      events: []
   }
 }
 

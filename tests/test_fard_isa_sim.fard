@@ -5,6 +5,7 @@ import("../src/fard_isa_sim") as sim
 import("../src/canonical_event_v1") as event
 import("../src/fard_isa_memory") as mem
 import("../src/fard_isa_encoding") as enc
+import("../src/trust_semantics") as trust
 import("std/list") as list
 import("std/str") as str
 
@@ -469,5 +470,61 @@ test "sim TRUST.VERIFY traps on mismatched prior epoch digest with canonical eve
   verify_ev.trap_digest != event.trap_digest_none() &&
   final.halted == true &&
   list.len(final.events) == 2 &&
+  final.receipt != genesis
+}
+
+test "sim TRUST.ATTEST writes attestation digest to memory and increments counter" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let empty_mem_write = event.memory_write_digest([]) in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 1024, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(1024))
+    ]),
+    lower.isa_instr(op.TRUST_ATTEST, 0, 1, 0, 0, [
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let initial = ty.initial_state(1, genesis) in
+  let final = sim.run(program, initial, 20) in
+  let attest_ev = list.get(final.events, 1) in
+  let expected_d = trust.attest("FARD_SIM_CHIP_V1", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 0, 1, ty.zero_digest(), event.receipt_next(genesis, list.get(final.events, 0).digest), 0) in
+  let h = str.slice(expected_d, 7, str.len(expected_d)) in
+  let observed_h = str.concat(list.build(32, fn(i) {
+    ty.hex8(mem.load_byte(final.memory, 1024 + i))
+  })) in
+  observed_h == h &&
+  final.attest_counter == 1 &&
+  attest_ev.opcode == op.TRUST_ATTEST &&
+  attest_ev.memory_write_digest != empty_mem_write &&
+  final.memory_root != ty.memory_root({}) &&
+  final.receipt != genesis
+}
+
+test "sim TRUST.ATTEST traps when hardware state is unprovisioned" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let base = ty.initial_state(1, genesis) in
+  let state = { ...base, chip_id: "", rom_root: ty.zero_digest() } in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 1024, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(1024))
+    ]),
+    lower.isa_instr(op.TRUST_ATTEST, 0, 1, 0, 0, [
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 999, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(2, 64, ty.hex64(999))
+    ])
+  ] in
+  let final = sim.run(program, state, 20) in
+  let attest_ev = list.get(final.events, 1) in
+  final.halted == true &&
+  list.len(final.events) == 2 &&
+  attest_ev.opcode == op.TRUST_ATTEST &&
+  attest_ev.trap_digest != event.trap_digest_none() &&
+  final.attest_counter == 0 &&
   final.receipt != genesis
 }
