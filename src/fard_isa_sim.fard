@@ -128,7 +128,20 @@ fn execute(state, instr) {
     let next = if taken then instr.imm64 else state.pc + 16 in
     transition_result(next, state.flags, state.privilege, [], [], [], [], event.result_digest_branch(state.pc, next, taken), event.trap_digest_none(), false, state)
   else if instr.opcode == op.BR_UNCOND then
-    transition_result(instr.imm64, state.flags, state.privilege, [], [], [], [], event.result_digest_branch(state.pc, instr.imm64, true), event.trap_digest_none(), false, state)
+    transition_result(instr.imm64, state.flags, state.privilege, [], [], [], [], event.result_digest_value(ty.fardval_int(instr.imm64)), event.trap_digest_none(), false, state)
+  else if instr.opcode == op.CALL_REL32 then
+    let return_pc = state.pc + 16 in
+    let target = instr.imm64 + 0 in
+    transition_result(target, state.flags, state.privilege, [], [], [], [], event.result_digest_value(ty.fardval_int(target)), event.trap_digest_none(), false, { ...state, call_stack: list.append(rec.getOr(state, "call_stack", []), return_pc) })
+  else if instr.opcode == op.RET_I64 then
+    let ret_v = read_reg(state, instr.rd) in
+    if list.len(rec.getOr(state, "call_stack", [])) == 0 then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rd, value: ret_v}], [], [], [], event.result_digest_value(ret_v), event.trap_digest_none(), true, { ...state, halted: true })
+    else
+      let idx = list.len(rec.getOr(state, "call_stack", [])) - 1 in
+      let return_pc = list.get(rec.getOr(state, "call_stack", []), idx) in
+      let new_stack = list.take(rec.getOr(state, "call_stack", []), idx) in
+      transition_result(return_pc, state.flags, state.privilege, [{reg_index: instr.rd, value: ret_v}], [], [], [], event.result_digest_value(ret_v), event.trap_digest_none(), false, { ...state, call_stack: new_stack })
   else if instr.opcode == op.TRUST_READ then
     let old = read_reg(state, instr.rd) in
     let digest_num = str.len(state.receipt) in
@@ -204,7 +217,7 @@ fn run(program, state, max_steps) {
     let r = step(s.state, program) in
     { state: r.state_after, steps: s.steps + 1 }
   } in
-  loop.value.state
+  { ...loop.value.state, call_stack: rec.getOr(loop.value.state, "call_stack", []) }
 }
 
 export { fetch, execute, step, run }

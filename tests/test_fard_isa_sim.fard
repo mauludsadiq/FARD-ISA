@@ -305,3 +305,65 @@ test "sim BR_UNCOND always jumps to target with canonical event evidence" {
   list.len(final.events) == 3 &&
   final.receipt != genesis
 }
+
+test "sim CALL_REL32 jumps to target and RET_I64 returns to caller with event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.CALL_REL32, 0, 0, 0, 48, [
+      lower.operand(5, 64, ty.hex64(48))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 9, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(2, 64, ty.hex64(9))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, []),
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 42, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(42))
+    ]),
+    lower.isa_instr(op.RET_I64, 1, 0, 0, 0, [
+      lower.operand(1, 16, ty.hex16(1))
+    ])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let call_ev = list.get(final.events, 0) in
+  let ret_ev = list.get(final.events, 2) in
+  let halt_ev = list.get(final.events, 4) in
+  final.regs["1"].payload == 42 &&
+  final.regs["2"].payload == 9 &&
+  final.halted == true &&
+  final.pc == 32 &&
+  list.len(final.call_stack) == 0 &&
+  list.len(final.events) == 5 &&
+  call_ev.opcode == op.CALL_REL32 &&
+  call_ev.event_obj.pc_after == 48 &&
+  ret_ev.opcode == op.RET_I64 &&
+  ret_ev.event_obj.pc_after == 16 &&
+  halt_ev.opcode == op.HALT &&
+  final.receipt != genesis
+}
+
+test "sim RET_I64 with empty call stack halts as program return with event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 17, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(17))
+    ]),
+    lower.isa_instr(op.RET_I64, 1, 0, 0, 0, [
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 999, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(2, 64, ty.hex64(999))
+    ])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let ret_ev = list.get(final.events, 1) in
+  final.halted == true &&
+  final.regs["1"].payload == 17 &&
+  ret_ev.opcode == op.RET_I64 &&
+  ret_ev.register_read_digest != event.reg_read_digest([]) &&
+  list.len(final.events) == 2 &&
+  final.receipt != genesis
+}
