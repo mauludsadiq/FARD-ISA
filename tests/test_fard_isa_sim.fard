@@ -60,3 +60,30 @@ test "sim FVAL.CHECK_TAG traps on wrong tag" {
   let final = sim.run(program, ty.initial_state(1, genesis), 20) in
   final.halted == true && list.len(final.events) == 2
 }
+
+test "sim STORE.MEM64 then LOAD.MEM64 emits memory digests" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 100, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(2, 64, ty.hex64(100))
+    ]),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 42, [
+      lower.operand(1, 16, ty.hex16(2)),
+      lower.operand(2, 64, ty.hex64(42))
+    ]),
+    lower.isa_instr(op.STORE_MEM64, 1, 2, 0, 0, [
+      lower.operand(1, 16, ty.hex16(1)),
+      lower.operand(1, 16, ty.hex16(2))
+    ]),
+    lower.isa_instr(op.LOAD_MEM64, 3, 1, 0, 0, [
+      lower.operand(1, 16, ty.hex16(3)),
+      lower.operand(1, 16, ty.hex16(1))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  final.regs["3"].payload == 42 &&
+  list.len(final.events) == 5 &&
+  final.memory_root != ty.memory_root({})
+}

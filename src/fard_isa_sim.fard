@@ -5,6 +5,7 @@ import("canonical_event_v1") as event
 import("fard_isa_opcodes") as op
 import("fard_isa_types") as ty
 import("fard_isa_registers") as regs
+import("fard_isa_memory") as mem
 import("trust_semantics") as trust
 
 fn pc_index(pc) {
@@ -56,6 +57,22 @@ fn execute(state, instr) {
     let newv = ty.fardval_int(instr.imm64) in
     let s2 = write_reg(state, instr.rd, newv) in
     transition_result(state.pc + 16, state.flags, state.privilege, [], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.LOAD_MEM64 then
+    let addr_v = read_reg(state, instr.rs1) in
+    let old = read_reg(state, instr.rd) in
+    let raw = mem.load_u64(state.memory, addr_v.payload) in
+    let newv = ty.fardval_int(raw) in
+    let mem_d = { addr: addr_v.payload, width: 8, value_hex: ty.hex64(raw), memory_root_before: state.memory_root, page_proof_digest: ty.zero_digest() } in
+    let s2 = write_reg(state, instr.rd, newv) in
+    transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: addr_v}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [mem_d], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.STORE_MEM64 then
+    let addr_v = read_reg(state, instr.rd) in
+    let val_v = read_reg(state, instr.rs1) in
+    let old_raw = mem.load_u64(state.memory, addr_v.payload) in
+    let new_mem = mem.store_u64(state.memory, addr_v.payload, val_v.payload) in
+    let new_root = mem.memory_root(new_mem) in
+    let mem_d = { addr: addr_v.payload, width: 8, old_value_hex: ty.hex64(old_raw), new_value_hex: ty.hex64(val_v.payload), memory_root_before: state.memory_root, memory_root_after: new_root, page_proof_digest: ty.zero_digest() } in
+    transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rd, value: addr_v}, {reg_index: instr.rs1, value: val_v}], [], [], [mem_d], event.result_digest_value(val_v), event.trap_digest_none(), false, { ...state, memory: new_mem, memory_root: new_root })
   else if instr.opcode == op.ADD_SLOT then
     let lhs = read_reg(state, instr.rd) in
     let rhs = read_reg(state, instr.imm64) in
@@ -163,7 +180,7 @@ fn step(state, program) {
     seq: before.seq + 1,
     receipt: receipt_after,
     halted: tr.halted || after0.halted,
-    events: list.append(before.events, [{ event: event_obj, digest: event_d }])
+    events: list.append(before.events, [{ event_obj: event_obj, digest: event_d, memory_read_digest: event_obj.memory_read_digest, memory_write_digest: event_obj.memory_write_digest }])
   } in
   { state_before: before, instr: instr, transition: tr, event: event_obj, event_digest: event_d, receipt_before: before.receipt, receipt_after: receipt_after, state_after: after }
 }

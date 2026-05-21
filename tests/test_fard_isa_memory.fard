@@ -1,0 +1,31 @@
+import("../src/fard_isa_memory") as mem
+
+test "page size is 4096" {
+  mem.PAGE_SIZE == 4096
+}
+
+test "page base aligns to 4096" {
+  mem.page_base(0) == 0 &&
+  mem.page_base(4095) == 0 &&
+  mem.page_base(4096) == 4096
+}
+
+test "store and load byte" {
+  let m = mem.store_byte({}, 10, 255) in
+  mem.load_byte(m, 10) == 255
+}
+
+test "missing byte reads zero" {
+  mem.load_byte({}, 99) == 0
+}
+
+test "store and load u64 little endian" {
+  let m = mem.store_u64({}, 100, 42) in
+  mem.load_u64(m, 100) == 42
+}
+
+test "memory root changes after store" {
+  let r0 = mem.memory_root({}) in
+  let r1 = mem.memory_root(mem.store_byte({}, 1, 7)) in
+  r0 != r1
+}

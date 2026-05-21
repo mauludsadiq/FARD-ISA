@@ -1,0 +1,109 @@
+import("std/str") as str
+import("std/list") as list
+import("std/hash") as hash
+import("std/rec") as rec
+import("std/int") as int
+
+let PAGE_SIZE = 4096
+let ADDRESS_BITS = 64
+
+fn valid_addr(addr) {
+  addr >= 0
+}
+
+fn require_addr(addr) {
+  if valid_addr(addr) then addr else
+  panic(str.concat(["invalid address: ", str.from(addr)]))
+}
+
+fn page_base(addr) {
+  let a = require_addr(addr) in
+  a - (a % PAGE_SIZE)
+}
+
+fn page_key(addr) {
+  str.concat(["page:", str.from(page_base(addr))])
+}
+
+fn byte_key(addr) {
+  str.concat(["mem:", str.from(addr)])
+}
+
+fn load_byte(mem, addr) {
+  let a = require_addr(addr) in
+  rec.getOr(mem, byte_key(a), 0)
+}
+
+fn store_byte(mem, addr, value) {
+  let a = require_addr(addr) in
+  if value < 0 || value > 255 then
+    panic("store_byte: value must be u8")
+  else
+    rec.set(mem, byte_key(a), value)
+}
+
+fn load_u64(mem, addr) {
+  list.fold(list.range(0, 8), 0, fn(acc, i) {
+    acc + (load_byte(mem, addr + i) * int.pow(256, i))
+  })
+}
+
+fn store_u64(mem, addr, value) {
+  list.fold(list.range(0, 8), mem, fn(m, i) {
+    let b = (value / int.pow(256, i)) % 256 in
+    store_byte(m, addr + i, b)
+  })
+}
+
+fn page_bytes(mem, base) {
+  list.build(PAGE_SIZE, fn(i) {
+    str.pad_left(int.to_hex(load_byte(mem, base + i)), 2, "0")
+  })
+}
+
+fn page_digest(mem, base) {
+  hash.sha256_text(str.concat([
+    "FARD.PAGE.V1",
+    str.concat(page_bytes(mem, base))
+  ]))
+}
+
+fn memory_root(mem) {
+  let keys = rec.keys(mem) in
+  let page_bases =
+    list.dedupe(
+      list.map(keys, fn(k) {
+        let addr = int.parse(str.slice(k, 4, str.len(k)))? in
+        page_base(addr)
+      })
+    ) in
+
+  let page_hashes =
+    list.map(
+      list.sort_int(page_bases),
+      fn(base) {
+        page_digest(mem, base)
+      }
+    ) in
+
+  hash.sha256_text(str.concat([
+    "FARD.MEMROOT.V1",
+    str.concat(page_hashes)
+  ]))
+}
+
+export {
+  PAGE_SIZE,
+  ADDRESS_BITS,
+  valid_addr,
+  require_addr,
+  page_base,
+  page_key,
+  byte_key,
+  load_byte,
+  store_byte,
+  load_u64,
+  store_u64,
+  page_digest,
+  memory_root
+}

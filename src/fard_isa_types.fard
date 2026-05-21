@@ -6,6 +6,7 @@ import("std/rec") as rec
 import("std/map") as map
 import("std/int") as int
 import("std/json") as json
+import("fard_isa_memory") as mem
 import("std/type") as type
 
 let TAG_INT = 0
@@ -86,8 +87,8 @@ fn mem_set(mem, addr, byte) {
   rec.set(mem, str.from(addr), byte)
 }
 
-fn memory_root(mem) {
-  hash.sha256_text(json.canonicalize(mem))
+fn memory_root(m) {
+  mem.memory_root(m)
 }
 
 fn initial_state(epoch_id, epoch_genesis) {

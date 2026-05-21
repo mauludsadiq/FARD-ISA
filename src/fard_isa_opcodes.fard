@@ -5,6 +5,8 @@ let LOAD_SLOT    = 257
 let STORE_SLOT   = 258
 let STORE_PARAM  = 259
 let LOAD_ARG     = 260
+let LOAD_MEM64   = 261
+let STORE_MEM64  = 262
 
 let ADD_SLOT     = 512
 let CMP_ZERO     = 513
@@ -34,6 +36,8 @@ fn name(op) {
   if op == STORE_SLOT then "STORE.SLOT" else
   if op == STORE_PARAM then "STORE.PARAM" else
   if op == LOAD_ARG then "LOAD.ARG" else
+  if op == LOAD_MEM64 then "LOAD.MEM64" else
+  if op == STORE_MEM64 then "STORE.MEM64" else
   if op == ADD_SLOT then "ADD.SLOT" else
   if op == CMP_ZERO then "CMP.ZERO" else
   if op == FVAL_BOX_I64 then "FVAL.BOX_I64" else
@@ -54,7 +58,7 @@ fn name(op) {
 }
 
 export {
-  LOAD_IMM64, LOAD_SLOT, STORE_SLOT, STORE_PARAM, LOAD_ARG,
+  LOAD_IMM64, LOAD_SLOT, STORE_SLOT, STORE_PARAM, LOAD_ARG, LOAD_MEM64, STORE_MEM64,
   ADD_SLOT, CMP_ZERO,
   FVAL_BOX_I64, FVAL_UNBOX_I64, FVAL_CHECK_TAG,
   BR_NE, BR_UNCOND,
