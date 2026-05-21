@@ -135,14 +135,14 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 
 ### Phase 2 — Simulator Completion
 
-- [ ] All 13 OMIR-mapped instructions simulated
-- [ ] FVAL_BOX_I64 and FVAL_UNBOX_I64 in simulator
-- [ ] STORE_PARAM and LOAD_ARG in simulator
-- [ ] BR_NE and BR_UNCOND in simulator
-- [ ] CALL_REL32 and RET_I64 in simulator
+- [x] All 13 OMIR-mapped instructions simulated
+- [x] FVAL_BOX_I64 and FVAL_UNBOX_I64 in simulator
+- [x] STORE_PARAM and LOAD_ARG in simulator
+- [x] BR_NE and BR_UNCOND in simulator
+- [x] CALL_REL32 and RET_I64 in simulator
 - [ ] Trust instructions in simulator (READ, FINALIZE, LOCK, ATTEST, VERIFY)
-- [ ] Full canonical event emission for every instruction
-- [ ] Epoch sealing in simulator
+- [x] Full canonical event emission for every instruction
+- [x] Epoch sealing in simulator
 - [ ] Simulator verified against golden interpreter on 10+ programs
 
 ### Phase 3 — Golden Interpreter Verification
