@@ -167,3 +167,52 @@ test "sim FVAL_UNBOX_I64 traps on non-int tag with canonical event evidence" {
   trap_ev.trap_digest != event.trap_digest_none() &&
   final.receipt != genesis
 }
+
+test "sim LOAD_ARG copies source register into ABI arg register with event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let empty_read = event.reg_read_digest([]) in
+  let empty_write = event.reg_write_digest([]) in
+  let program = [
+    lower.isa_instr(op.LOAD_IMM64, 10, 0, 0, 88, [
+      lower.operand(1, 16, ty.hex16(10)),
+      lower.operand(2, 64, ty.hex64(88))
+    ]),
+    lower.isa_instr(op.LOAD_ARG, 0, 0, 0, 10, [
+      lower.operand(4, 16, ty.hex16(0)),
+      lower.operand(1, 16, ty.hex16(10))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, ty.initial_state(1, genesis), 20) in
+  let load_arg_ev = list.get(final.events, 1) in
+  final.regs["2"].payload == 88 &&
+  list.len(final.events) == 3 &&
+  load_arg_ev.opcode == op.LOAD_ARG &&
+  load_arg_ev.register_read_digest != empty_read &&
+  load_arg_ev.register_write_digest != empty_write &&
+  final.receipt != genesis
+}
+
+test "sim STORE_PARAM copies ABI arg register into destination register with event evidence" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let empty_read = event.reg_read_digest([]) in
+  let empty_write = event.reg_write_digest([]) in
+  let initial = ty.initial_state(1, genesis) in
+  let regs0 = ty.reg_set(initial.regs, 2, ty.fardval_int(99)) in
+  let state = { ...initial, regs: regs0 } in
+  let program = [
+    lower.isa_instr(op.STORE_PARAM, 0, 0, 0, 11, [
+      lower.operand(4, 16, ty.hex16(0)),
+      lower.operand(1, 16, ty.hex16(11))
+    ]),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let final = sim.run(program, state, 20) in
+  let store_param_ev = list.get(final.events, 0) in
+  final.regs["11"].payload == 99 &&
+  list.len(final.events) == 2 &&
+  store_param_ev.opcode == op.STORE_PARAM &&
+  store_param_ev.register_read_digest != empty_read &&
+  store_param_ev.register_write_digest != empty_write &&
+  final.receipt != genesis
+}
