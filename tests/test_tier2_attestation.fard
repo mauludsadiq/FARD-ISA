@@ -1,0 +1,35 @@
+import("../src/tier2_attestation") as tier2
+import("../src/golden_omir_interpreter") as golden
+import("../src/fard_isa_types") as ty
+
+let genesis = "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+let chip_id = "FARD_SIM_CHIP_V1"
+let rom_root = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+fn sample_receipt() {
+  let r = golden.run([
+    { kind: "mov_imm64", dst: 1, val: 42 },
+    { kind: "halt" }
+  ], genesis) in
+  r.epoch_receipt_v1
+}
+
+test "Tier2 attestation statement verifies against expected epoch receipt" {
+  let receipt = sample_receipt() in
+  let statement = tier2.make_statement(chip_id, rom_root, receipt, receipt.r_final, 0, 0) in
+  tier2.verify_statement(statement, chip_id, rom_root, receipt.digest, receipt.r_final)
+}
+
+test "Tier2 attestation statement rejects wrong epoch digest" {
+  let receipt = sample_receipt() in
+  let wrong = "sha256:5555555555555555555555555555555555555555555555555555555555555555" in
+  let statement = tier2.make_statement(chip_id, rom_root, receipt, receipt.r_final, 0, 0) in
+  tier2.verify_statement(statement, chip_id, rom_root, wrong, receipt.r_final) == false
+}
+
+test "Tier2 attestation digest changes with counter" {
+  let receipt = sample_receipt() in
+  let a = tier2.make_statement(chip_id, rom_root, receipt, receipt.r_final, 0, 0) in
+  let b = tier2.make_statement(chip_id, rom_root, receipt, receipt.r_final, 0, 1) in
+  a.attest_digest != b.attest_digest
+}

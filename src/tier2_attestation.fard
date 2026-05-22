@@ -1,0 +1,60 @@
+import("std/hash") as hash
+import("std/json") as json
+import("std/str") as str
+import("canonical_event_v1") as event
+import("trust_semantics") as trust
+import("epoch_receipt_v1") as epoch_receipt
+import("fard_isa_types") as ty
+
+fn make_statement(chip_id, rom_root, epoch_receipt, current_r, privilege, counter) {
+  event.require_digest(rom_root, "tier2_attestation.make_statement rom_root") |
+  event.require_digest(epoch_receipt.digest, "tier2_attestation.make_statement epoch_receipt.digest") |
+  event.require_digest(current_r, "tier2_attestation.make_statement current_r") |
+  let attest_digest = trust.attest(
+    chip_id,
+    rom_root,
+    privilege,
+    epoch_receipt.epoch_id,
+    epoch_receipt.digest,
+    current_r,
+    counter
+  ) in
+  {
+    version: "Tier2AttestationV1",
+    chip_id: chip_id,
+    rom_root: rom_root,
+    privilege: privilege,
+    epoch_id: epoch_receipt.epoch_id,
+    prior_epoch_digest: epoch_receipt.digest,
+    current_r: current_r,
+    counter: counter,
+    attest_digest: attest_digest
+  }
+}
+
+fn statement_digest(statement) {
+  hash.sha256_text(json.canonicalize(statement))
+}
+
+fn verify_statement(statement, expected_chip_id, expected_rom_root, expected_epoch_digest, expected_current_r) {
+  event.require_digest(expected_rom_root, "tier2_attestation.verify expected_rom_root") |
+  event.require_digest(expected_epoch_digest, "tier2_attestation.verify expected_epoch_digest") |
+  event.require_digest(expected_current_r, "tier2_attestation.verify expected_current_r") |
+  let recomputed = trust.attest(
+    statement.chip_id,
+    statement.rom_root,
+    statement.privilege,
+    statement.epoch_id,
+    statement.prior_epoch_digest,
+    statement.current_r,
+    statement.counter
+  ) in
+  statement.version == "Tier2AttestationV1" &&
+  statement.chip_id == expected_chip_id &&
+  statement.rom_root == expected_rom_root &&
+  statement.prior_epoch_digest == expected_epoch_digest &&
+  statement.current_r == expected_current_r &&
+  statement.attest_digest == recomputed
+}
+
+export { make_statement, statement_digest, verify_statement }
