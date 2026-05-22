@@ -154,7 +154,7 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 
 ### Phase 3 — Golden Interpreter Verification
 
-- [ ] fard_eval.fard handles full language (while, fs, imports)
+- [x] fard_eval.fard handles full language (while, fs, imports)
 - [x] Golden interpreter takes OMIR, produces EpochReceiptV1
 - [x] Same program through golden interpreter and simulator produces matching receipts
 - [x] Test suite: lex -> parse -> OMIR -> simulator -> receipt
