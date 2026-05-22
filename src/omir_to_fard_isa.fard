@@ -82,6 +82,20 @@ fn map_omir(omir) {
     isa_instr(op.RET_I64, omir.src, 0, 0, 0, [
       operand(1, 16, ty.hex16(omir.src))
     ])
+  else if k == "trust_read" then
+    isa_instr(op.TRUST_READ, 0, omir.addr_reg, 0, 0, [
+      operand(1, 16, ty.hex16(omir.addr_reg))
+    ])
+  else if k == "trust_attest" then
+    isa_instr(op.TRUST_ATTEST, 0, omir.addr_reg, 0, 0, [
+      operand(1, 16, ty.hex16(omir.addr_reg))
+    ])
+  else if k == "trust_verify" then
+    isa_instr(op.TRUST_VERIFY, 0, omir.addr_reg, 0, 0, [
+      operand(1, 16, ty.hex16(omir.addr_reg))
+    ])
+  else if k == "trust_finalize" then
+    isa_instr(op.TRUST_FINALIZE, 0, 0, 0, 0, [])
   else if k == "halt" then
     isa_instr(op.HALT, 0, 0, 0, 0, [])
   else if k == "bind_label" then

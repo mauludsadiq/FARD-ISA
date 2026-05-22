@@ -3,6 +3,9 @@ import("../src/omir_to_fard_isa") as lower
 import("../src/fard_isa_sim") as sim
 import("../src/fard_isa_types") as ty
 import("std/list") as list
+import("std/str") as str
+import("../src/fard_isa_memory") as mem
+import("../src/fard_isa_encoding") as enc
 
 let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
@@ -55,5 +58,89 @@ test "OMIR to ISA semantic comparison fardval box unbox" {
   g.final_state.regs["3"].payload == s.regs["3"].payload &&
   g.final_state.regs["3"].tag == s.regs["3"].tag &&
   g.receipt != genesis &&
+  s.receipt != genesis
+}
+
+test "OMIR to ISA semantic comparison call return" {
+  let omir = [
+    { kind: "call_reloc", target: 3 },
+    { kind: "mov_imm64", dst: 2, val: 9 },
+    { kind: "halt" },
+    { kind: "mov_imm64", dst: 1, val: 42 },
+    { kind: "ret_i64", src: 1 }
+  ] in
+  let g = golden.run(omir, genesis) in
+  let s = sim_program(omir) in
+  g.final_state.regs["1"].payload == s.regs["1"].payload &&
+  g.final_state.regs["2"].payload == s.regs["2"].payload &&
+  g.final_state.halted == s.halted &&
+  list.len(g.final_state.call_stack) == list.len(s.call_stack) &&
+  g.receipt != genesis &&
+  s.receipt != genesis
+}
+
+test "OMIR to ISA semantic comparison ABI movement" {
+  let omir = [
+    { kind: "mov_imm64", dst: 10, val: 88 },
+    { kind: "load_arg", arg_idx: 0, slot: 10 },
+    { kind: "store_param", arg_idx: 0, slot: 11 },
+    { kind: "halt" }
+  ] in
+  let g = golden.run(omir, genesis) in
+  let s = sim_program(omir) in
+  g.final_state.regs["2"].payload == s.regs["2"].payload &&
+  g.final_state.regs["11"].payload == s.regs["11"].payload &&
+  g.final_state.halted == s.halted &&
+  g.receipt != genesis &&
+  s.receipt != genesis
+}
+
+test "OMIR to ISA semantic comparison finalize" {
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 5 },
+    { kind: "trust_finalize" }
+  ] in
+  let g = golden.run(omir, genesis) in
+  let s = sim_program(omir) in
+  g.final_state.halted == s.halted &&
+  g.final_state.prior_epoch_digest != ty.zero_digest() &&
+  s.prior_epoch_digest != ty.zero_digest() &&
+  g.receipt != genesis &&
+  s.receipt != genesis
+}
+
+test "OMIR to ISA semantic comparison trust read and attest" {
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 256 },
+    { kind: "trust_read", addr_reg: 1 },
+    { kind: "mov_imm64", dst: 1, val: 512 },
+    { kind: "trust_attest", addr_reg: 1 },
+    { kind: "halt" }
+  ] in
+  let s = sim_program(omir) in
+  s.halted == true &&
+  s.attest_counter == 1 &&
+  s.memory_root != ty.memory_root({}) &&
+  s.receipt != genesis
+}
+
+test "OMIR to ISA semantic comparison trust verify success" {
+  let prior = "sha256:2222222222222222222222222222222222222222222222222222222222222222" in
+  let h = "2222222222222222222222222222222222222222222222222222222222222222" in
+  let bytes_hex = list.build(32, fn(i) { str.slice(h, i * 2, (i + 1) * 2) }) in
+  let memory0 = list.fold(list.range(0, 32), {}, fn(m, i) {
+    mem.store_byte(m, 768 + i, enc.parse_hex(list.get(bytes_hex, i)))
+  }) in
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 768 },
+    { kind: "trust_verify", addr_reg: 1 },
+    { kind: "halt" }
+  ] in
+  let isa = lower.map_program(omir) in
+  let base = ty.initial_state(1, genesis) in
+  let state = { ...base, prior_epoch_digest: prior, memory: memory0, memory_root: mem.memory_root(memory0) } in
+  let s = sim.run(isa, state, 1000) in
+  s.halted == true &&
+  list.len(s.events) == 3 &&
   s.receipt != genesis
 }
