@@ -118,8 +118,9 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_omir_to_isa_receipt_equivalence.fard 8 passed
    fardrun test --program tests/test_phase3_pipeline_receipt.fard        4 passed
    fardrun test --program tests/test_recursive_programs.fard             3 passed
+   fardrun test --program tests/test_tier2_attestation.fard             3 passed
 
-   Total: 74 tests, all passing
+   Total: 77 tests, all passing
 
 ---
 
@@ -159,7 +160,7 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 - [x] Test suite: lex -> parse -> OMIR -> simulator -> receipt
 - [x] Test suite: recursive programs verified
 - [x] Test suite: closure and capture verified
-- [ ] Tier 2 attestation formally defined and tested
+- [x] Tier 2 attestation formally defined and tested
 
 ### Phase 4 — FPGA Implementation
 
