@@ -28,8 +28,8 @@ fn reg_write(state, idx, value) {
 }
 
 fn fetch(omir_ops, pc) {
-  if pc < 0 then panic(str.concat(["golden_omir_interpreter.fetch: negative pc ", str.from(pc)])) else
-  if pc >= list.len(omir_ops) then panic(str.concat(["golden_omir_interpreter.fetch: pc out of range ", str.from(pc)])) else
+  if pc < 0 then { kind: "__trap__", message: str.concat(["golden_omir_interpreter.fetch: negative pc ", str.from(pc)]) } else
+  if pc >= list.len(omir_ops) then { kind: "__trap__", message: str.concat(["golden_omir_interpreter.fetch: pc out of range ", str.from(pc)]) } else
   list.get(omir_ops, pc)
 }
 
@@ -70,7 +70,7 @@ fn eval_op(state, op) {
     let f = if v.payload == 0 then 1 else 0 in
     { ...state, flags: f, pc: state.pc + 1 }
 
-  else if k == "br_ne" then
+  else if k == "br_ne" || k == "br_if_ne" then
     if state.flags != 1 then { ...state, pc: op.target } else { ...state, pc: state.pc + 1 }
 
   else if k == "br_uncond" then
@@ -105,8 +105,10 @@ fn eval_op(state, op) {
   else if k == "halt" then
     { ...state, halted: true }
 
+  else if k == "__trap__" then
+    { ...state, halted: true, trap: op.message }
   else
-    panic(str.concat(["golden_omir_interpreter.eval_op: unknown OMIR op: ", k]))
+    { ...state, halted: true, trap: str.concat(["golden_omir_interpreter.eval_op: unknown OMIR op: ", k]) }
 }
 
 fn event_for_step(seq, before, after, op) {

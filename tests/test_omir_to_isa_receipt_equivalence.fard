@@ -1,0 +1,59 @@
+import("../src/golden_omir_interpreter") as golden
+import("../src/omir_to_fard_isa") as lower
+import("../src/fard_isa_sim") as sim
+import("../src/fard_isa_types") as ty
+import("std/list") as list
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+fn sim_program(omir) {
+  sim.run(lower.map_program(omir), ty.initial_state(1, genesis), 1000)
+}
+
+test "OMIR to ISA semantic comparison mov add halt" {
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 40 },
+    { kind: "mov_imm64", dst: 2, val: 2 },
+    { kind: "add_slot", dst: 1, slot: 2 },
+    { kind: "halt" }
+  ] in
+  let g = golden.run(omir, genesis) in
+  let s = sim_program(omir) in
+  g.final_state.regs["1"].payload == s.regs["1"].payload &&
+  g.final_state.halted == s.halted &&
+  g.receipt != genesis &&
+  s.receipt != genesis &&
+  list.len(s.events) == list.len(g.events)
+}
+
+test "OMIR to ISA semantic comparison branch" {
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 7 },
+    { kind: "cmp_zero", slot: 1 },
+    { kind: "br_if_ne", target: 4 },
+    { kind: "mov_imm64", dst: 2, val: 111 },
+    { kind: "mov_imm64", dst: 2, val: 222 },
+    { kind: "halt" }
+  ] in
+  let g = golden.run(omir, genesis) in
+  let s = sim_program(omir) in
+  g.final_state.regs["2"].payload == s.regs["2"].payload &&
+  g.final_state.halted == s.halted &&
+  g.receipt != genesis &&
+  s.receipt != genesis
+}
+
+test "OMIR to ISA semantic comparison fardval box unbox" {
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 77 },
+    { kind: "fval_box_i64", dst: 2, src: 1 },
+    { kind: "fval_unbox_i64", dst: 3, src: 2 },
+    { kind: "halt" }
+  ] in
+  let g = golden.run(omir, genesis) in
+  let s = sim_program(omir) in
+  g.final_state.regs["3"].payload == s.regs["3"].payload &&
+  g.final_state.regs["3"].tag == s.regs["3"].tag &&
+  g.receipt != genesis &&
+  s.receipt != genesis
+}

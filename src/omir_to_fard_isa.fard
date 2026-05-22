@@ -37,12 +37,12 @@ fn map_omir(omir) {
       operand(1, 16, ty.hex16(omir.src)),
       operand(3, 64, ty.hex64(omir.slot))
     ])
-  else if k == "add_reg_stack" then
+  else if k == "add_reg_stack" || k == "add_slot" then
     isa_instr(op.ADD_SLOT, omir.dst, 0, 0, omir.slot, [
       operand(1, 16, ty.hex16(omir.dst)),
       operand(3, 64, ty.hex64(omir.slot))
     ])
-  else if k == "cmp_stack_zero" then
+  else if k == "cmp_stack_zero" || k == "cmp_zero" then
     isa_instr(op.CMP_ZERO, 0, 0, 0, omir.slot, [
       operand(3, 64, ty.hex64(omir.slot))
     ])
@@ -56,36 +56,38 @@ fn map_omir(omir) {
       operand(4, 16, ty.hex16(omir.arg_idx)),
       operand(3, 64, ty.hex64(omir.slot))
     ])
-  else if k == "write_fval_int" then
+  else if k == "write_fval_int" || k == "fval_box_i64" then
     isa_instr(op.FVAL_BOX_I64, omir.dst, omir.src, 0, 0, [
       operand(1, 16, ty.hex16(omir.dst)),
       operand(1, 16, ty.hex16(omir.src))
     ])
-  else if k == "unbox_int" then
+  else if k == "unbox_int" || k == "fval_unbox_i64" then
     isa_instr(op.FVAL_UNBOX_I64, omir.dst, omir.src, 0, 0, [
       operand(1, 16, ty.hex16(omir.dst)),
       operand(1, 16, ty.hex16(omir.src))
     ])
-  else if k == "jne" then
-    isa_instr(op.BR_NE, 0, 0, 0, omir.target, [
+  else if k == "jne" || k == "br_ne" || k == "br_if_ne" then
+    isa_instr(op.BR_NE, 0, 0, 0, omir.target * 16, [
       operand(5, 64, ty.hex64(omir.target))
     ])
-  else if k == "jmp" then
-    isa_instr(op.BR_UNCOND, 0, 0, 0, omir.target, [
+  else if k == "jmp" || k == "br_uncond" then
+    isa_instr(op.BR_UNCOND, 0, 0, 0, omir.target * 16, [
       operand(5, 64, ty.hex64(omir.target))
     ])
-  else if k == "call_reloc" then
-    isa_instr(op.CALL_REL32, 0, 0, 0, omir.target, [
+  else if k == "call_reloc" || k == "call_rel32" then
+    isa_instr(op.CALL_REL32, 0, 0, 0, omir.target * 16, [
       operand(5, 64, ty.hex64(omir.target))
     ])
   else if k == "ret_i64" then
     isa_instr(op.RET_I64, omir.src, 0, 0, 0, [
       operand(1, 16, ty.hex16(omir.src))
     ])
+  else if k == "halt" then
+    isa_instr(op.HALT, 0, 0, 0, 0, [])
   else if k == "bind_label" then
     { pseudo: true, label: omir.label }
   else
-    panic(str.concat(["unknown OMIR op: ", k]))
+    { pseudo: true, error: str.concat(["unknown OMIR op: ", k]) }
 }
 
 fn map_program(omir_ops) {
