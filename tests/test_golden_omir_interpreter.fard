@@ -1,0 +1,109 @@
+import("../src/golden_omir_interpreter") as golden
+import("../src/canonical_event_v1") as event
+import("../src/fard_isa_types") as ty
+import("std/list") as list
+
+test "golden OMIR interpreter produces receipt and epoch digest" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 40 },
+    { kind: "mov_imm64", dst: 2, val: 2 },
+    { kind: "add_slot", dst: 1, slot: 2 },
+    { kind: "halt" }
+  ] in
+  let r = golden.run(omir, genesis) in
+  r.final_state.regs["1"].payload == 42 &&
+  r.receipt != genesis &&
+  r.epoch_digest != ty.zero_digest() &&
+  list.len(r.events) == 4
+}
+
+test "golden OMIR receipt recomputes from event stream" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 7 },
+    { kind: "halt" }
+  ] in
+  let r = golden.run(omir, genesis) in
+  let recomputed = list.fold(r.events, genesis, fn(acc, ev) {
+    event.receipt_next(acc, ev["digest"])
+  }) in
+  r.receipt == recomputed
+}
+
+test "golden OMIR handles FardVal box unbox check" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 77 },
+    { kind: "fval_box_i64", dst: 2, src: 1 },
+    { kind: "fval_unbox_i64", dst: 3, src: 2 },
+    { kind: "fval_check_tag", dst: 4, src: 3, tag: ty.TAG_INT },
+    { kind: "halt" }
+  ] in
+  let r = golden.run(omir, genesis) in
+  r.final_state.regs["3"].payload == 77 &&
+  r.final_state.regs["4"].payload == 1 &&
+  list.len(r.events) == 5 &&
+  r.receipt != genesis
+}
+
+test "golden OMIR handles branch taken and fallthrough" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 7 },
+    { kind: "cmp_zero", slot: 1 },
+    { kind: "br_ne", target: 4 },
+    { kind: "mov_imm64", dst: 2, val: 111 },
+    { kind: "mov_imm64", dst: 2, val: 222 },
+    { kind: "halt" }
+  ] in
+  let r = golden.run(omir, genesis) in
+  r.final_state.regs["2"].payload == 222 &&
+  list.len(r.events) == 5 &&
+  r.receipt != genesis
+}
+
+test "golden OMIR handles call and return" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "call_rel32", target: 3 },
+    { kind: "mov_imm64", dst: 2, val: 9 },
+    { kind: "halt" },
+    { kind: "mov_imm64", dst: 1, val: 42 },
+    { kind: "ret_i64", src: 1 }
+  ] in
+  let r = golden.run(omir, genesis) in
+  r.final_state.regs["1"].payload == 42 &&
+  r.final_state.regs["2"].payload == 9 &&
+  list.len(r.final_state.call_stack) == 0 &&
+  list.len(r.events) == 5 &&
+  r.receipt != genesis
+}
+
+test "golden OMIR handles ABI arg movement" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "mov_imm64", dst: 10, val: 88 },
+    { kind: "load_arg", arg_idx: 0, slot: 10 },
+    { kind: "store_param", arg_idx: 0, slot: 11 },
+    { kind: "halt" }
+  ] in
+  let r = golden.run(omir, genesis) in
+  r.final_state.regs["2"].payload == 88 &&
+  r.final_state.regs["11"].payload == 88 &&
+  list.len(r.events) == 4 &&
+  r.receipt != genesis
+}
+
+test "golden OMIR finalize sets prior epoch digest" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 5 },
+    { kind: "trust_finalize" }
+  ] in
+  let r = golden.run(omir, genesis) in
+  r.final_state.prior_epoch_digest != ty.zero_digest() &&
+  r.final_state.halted == true &&
+  list.len(r.events) == 2 &&
+  r.receipt != genesis
+}
