@@ -107,3 +107,18 @@ test "golden OMIR finalize sets prior epoch digest" {
   list.len(r.events) == 2 &&
   r.receipt != genesis
 }
+
+test "golden OMIR returns formal EpochReceiptV1" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let omir = [
+    { kind: "mov_imm64", dst: 1, val: 42 },
+    { kind: "halt" }
+  ] in
+  let r = golden.run(omir, genesis) in
+  r.epoch_receipt_v1.version == "EpochReceiptV1" &&
+  r.epoch_receipt_v1.epoch_genesis == genesis &&
+  r.epoch_receipt_v1.r_final == r.receipt &&
+  r.epoch_receipt_v1.final_state_digest == r.final_state_digest &&
+  r.epoch_receipt_v1.digest == r.epoch_digest &&
+  r.epoch_receipt_v1.event_count == list.len(r.events)
+}

@@ -1,0 +1,33 @@
+import("std/hash") as hash
+import("std/json") as json
+import("trust_semantics") as trust
+import("canonical_event_v1") as event
+
+fn make(epoch_id, epoch_genesis, r_final, final_state_digest, output_digest, exit_code, event_count) {
+  event.require_digest(epoch_genesis, "epoch_receipt_v1.make epoch_genesis") |
+  event.require_digest(r_final, "epoch_receipt_v1.make r_final") |
+  event.require_digest(final_state_digest, "epoch_receipt_v1.make final_state_digest") |
+  event.require_digest(output_digest, "epoch_receipt_v1.make output_digest") |
+  let digest = trust.epoch_digest(epoch_genesis, r_final, final_state_digest, output_digest, exit_code) in
+  {
+    version: "EpochReceiptV1",
+    epoch_id: epoch_id,
+    epoch_genesis: epoch_genesis,
+    r_final: r_final,
+    final_state_digest: final_state_digest,
+    output_digest: output_digest,
+    exit_code: exit_code,
+    event_count: event_count,
+    digest: digest
+  }
+}
+
+fn receipt_digest(receipt) {
+  receipt.digest
+}
+
+fn canonical_digest(receipt) {
+  hash.sha256_text(json.canonicalize(receipt))
+}
+
+export { make, receipt_digest, canonical_digest }

@@ -1,5 +1,6 @@
 import("canonical_event_v1") as event
 import("trust_semantics") as trust
+import("epoch_receipt_v1") as epoch_receipt
 import("fard_isa_types") as ty
 import("fard_isa_registers") as regs
 import("std/list") as list
@@ -183,9 +184,20 @@ fn run_with_fuel(omir_ops, genesis, max_steps) {
     0
   ) in
 
+  let epoch_receipt_v1 = epoch_receipt.make(
+    1,
+    genesis,
+    loop.value.state.receipt,
+    final_state_d,
+    output_d,
+    0,
+    list.len(loop.value.state.events)
+  ) in
+
   {
     receipt: loop.value.state.receipt,
     epoch_digest: epoch_d,
+    epoch_receipt_v1: epoch_receipt_v1,
     final_state_digest: final_state_d,
     events: loop.value.state.events,
     final_state: loop.value.state
