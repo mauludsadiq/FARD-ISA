@@ -107,6 +107,7 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 ## Tests
 
    fardrun test --program tests/test_canonical_event_v1.fard             2 passed
+   fardrun test --program tests/test_closure_capture_programs.fard           3 passed
    fardrun test --program tests/test_omir_to_fard_isa.fard               2 passed
    fardrun test --program tests/test_fard_isa_encoding.fard              3 passed
    fardrun test --program tests/test_fard_isa_registers.fard             6 passed
@@ -118,7 +119,7 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_phase3_pipeline_receipt.fard        4 passed
    fardrun test --program tests/test_recursive_programs.fard             3 passed
 
-   Total: 71 tests, all passing
+   Total: 74 tests, all passing
 
 ---
 
