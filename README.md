@@ -150,7 +150,7 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 - [ ] fard_eval.fard handles full language (while, fs, imports)
 - [x] Golden interpreter takes OMIR, produces EpochReceiptV1
 - [x] Same program through golden interpreter and simulator produces matching receipts
-- [ ] Test suite: lex -> parse -> OMIR -> simulator -> receipt
+- [x] Test suite: lex -> parse -> OMIR -> simulator -> receipt
 - [ ] Test suite: recursive programs verified
 - [ ] Test suite: closure and capture verified
 - [ ] Tier 2 attestation formally defined and tested
