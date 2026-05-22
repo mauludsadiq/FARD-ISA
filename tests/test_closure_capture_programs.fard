@@ -1,0 +1,68 @@
+import("../src/golden_omir_interpreter") as golden
+import("../src/omir_to_fard_isa") as lower
+import("../src/fard_isa_sim") as sim
+import("../src/fard_isa_types") as ty
+
+fn run_pair(omir) {
+  let genesis = "sha256:3333333333333333333333333333333333333333333333333333333333333333" in
+  {
+    golden: golden.run(omir, genesis),
+    sim: sim.run(lower.map_program(omir), ty.initial_state(1, genesis), 1000)
+  }
+}
+
+test "closure capture value survives call boundary" {
+  let r = run_pair([
+    { kind: "mov_imm64", dst: 10, val: 40 },
+    { kind: "call_rel32", target: 4 },
+    { kind: "halt" },
+    { kind: "mov_imm64", dst: 99, val: 999 },
+    { kind: "mov_imm64", dst: 1, val: 2 },
+    { kind: "add_slot", dst: 1, slot: 10 },
+    { kind: "ret_i64", src: 1 }
+  ]) in
+  r.golden.final_state.regs["1"].payload == 42 &&
+  r.sim.regs["1"].payload == 42 &&
+  r.golden.final_state.regs["10"].payload == 40 &&
+  r.sim.regs["10"].payload == 40 &&
+  r.golden.final_state.halted &&
+  r.sim.halted
+}
+
+test "closure capture multiple values across nested call" {
+  let r = run_pair([
+    { kind: "mov_imm64", dst: 10, val: 30 },
+    { kind: "mov_imm64", dst: 11, val: 12 },
+    { kind: "call_rel32", target: 5 },
+    { kind: "halt" },
+    { kind: "mov_imm64", dst: 99, val: 999 },
+    { kind: "call_rel32", target: 8 },
+    { kind: "ret_i64", src: 1 },
+    { kind: "mov_imm64", dst: 98, val: 998 },
+    { kind: "mov_imm64", dst: 1, val: 0 },
+    { kind: "add_slot", dst: 1, slot: 10 },
+    { kind: "add_slot", dst: 1, slot: 11 },
+    { kind: "ret_i64", src: 1 }
+  ]) in
+  r.golden.final_state.regs["1"].payload == 42 &&
+  r.sim.regs["1"].payload == 42 &&
+  r.golden.final_state.halted &&
+  r.sim.halted
+}
+
+test "closure capture receipt determinism" {
+  let omir = [
+    { kind: "mov_imm64", dst: 10, val: 41 },
+    { kind: "call_rel32", target: 3 },
+    { kind: "halt" },
+    { kind: "mov_imm64", dst: 1, val: 1 },
+    { kind: "add_slot", dst: 1, slot: 10 },
+    { kind: "ret_i64", src: 1 }
+  ] in
+  let a = run_pair(omir) in
+  let b = run_pair(omir) in
+  a.golden.receipt == b.golden.receipt &&
+  a.sim.receipt == b.sim.receipt &&
+  a.golden.final_state.regs["1"].payload == 42 &&
+  a.sim.regs["1"].payload == 42
+}
