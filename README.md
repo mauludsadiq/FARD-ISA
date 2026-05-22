@@ -106,14 +106,19 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 
 ## Tests
 
-   fardrun test --program tests/test_canonical_event_v1.fard    2 passed
-   fardrun test --program tests/test_omir_to_fard_isa.fard      2 passed
-   fardrun test --program tests/test_fard_isa_encoding.fard     3 passed
-   fardrun test --program tests/test_fard_isa_registers.fard    6 passed
-   fardrun test --program tests/test_fard_isa_memory.fard       6 passed
-   fardrun test --program tests/test_fard_isa_sim.fard          4 passed
+   fardrun test --program tests/test_canonical_event_v1.fard             2 passed
+   fardrun test --program tests/test_omir_to_fard_isa.fard               2 passed
+   fardrun test --program tests/test_fard_isa_encoding.fard              3 passed
+   fardrun test --program tests/test_fard_isa_registers.fard             6 passed
+   fardrun test --program tests/test_fard_isa_memory.fard                6 passed
+   fardrun test --program tests/test_fard_isa_sim.fard                  19 passed
+   fardrun test --program tests/test_golden_interpreter_equivalence.fard 10 passed
+   fardrun test --program tests/test_golden_omir_interpreter.fard        8 passed
+   fardrun test --program tests/test_omir_to_isa_receipt_equivalence.fard 8 passed
+   fardrun test --program tests/test_phase3_pipeline_receipt.fard        4 passed
+   fardrun test --program tests/test_recursive_programs.fard             3 passed
 
-   Total: 23 tests, all passing
+   Total: 71 tests, all passing
 
 ---
 
@@ -201,3 +206,7 @@ written entirely in FARD, producing cryptographic receipts at every step.
 FARD-ISA makes the execution tier of those receipts hardware-rooted.
 
    https://github.com/mauludsadiq/FARD
+
+# License
+
+MUI
