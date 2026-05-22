@@ -1,0 +1,61 @@
+import("../src/golden_omir_interpreter") as golden
+import("../src/omir_to_fard_isa") as lower
+import("../src/fard_isa_sim") as sim
+import("../src/fard_isa_types") as ty
+
+fn run_pair(omir) {
+  let genesis = "sha256:2222222222222222222222222222222222222222222222222222222222222222" in
+  {
+    golden: golden.run(omir, genesis),
+    sim: sim.run(lower.map_program(omir), ty.initial_state(1, genesis), 1000)
+  }
+}
+
+test "recursive style nested call return chain" {
+  let r = run_pair([
+    { kind: "call_rel32", target: 3 },
+    { kind: "mov_imm64", dst: 9, val: 1 },
+    { kind: "halt" },
+
+    { kind: "mov_imm64", dst: 1, val: 10 },
+    { kind: "call_rel32", target: 6 },
+    { kind: "ret_i64", src: 1 },
+
+    { kind: "mov_imm64", dst: 2, val: 20 },
+    { kind: "ret_i64", src: 2 }
+  ]) in
+
+  r.golden.final_state.regs["1"].payload == 10 &&
+  r.golden.final_state.regs["2"].payload == 20 &&
+  r.sim.regs["1"].payload == 10 &&
+  r.sim.regs["2"].payload == 20 &&
+  r.golden.final_state.halted &&
+  r.sim.halted
+}
+
+test "recursive style receipt determinism" {
+  let omir = [
+    { kind: "call_rel32", target: 3 },
+    { kind: "halt" },
+    { kind: "mov_imm64", dst: 1, val: 77 },
+    { kind: "ret_i64", src: 1 }
+  ] in
+
+  let a = run_pair(omir) in
+  let b = run_pair(omir) in
+
+  a.golden.receipt == b.golden.receipt &&
+  a.sim.receipt == b.sim.receipt
+}
+
+test "recursive style finalize stability" {
+  let r = run_pair([
+    { kind: "call_rel32", target: 2 },
+    { kind: "halt" },
+    { kind: "trust_finalize" },
+    { kind: "ret_i64", src: 0 }
+  ]) in
+
+  r.golden.final_state.prior_epoch_digest != ty.zero_digest() &&
+  r.sim.prior_epoch_digest != ty.zero_digest()
+}
