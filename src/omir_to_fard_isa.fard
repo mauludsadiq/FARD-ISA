@@ -179,9 +179,18 @@ fn map_fard_prim_omir(inst) {
     ])
 
   else if op_ == "LoadArg" || op_ == "LoadArgReg" then
-    isa_instr(op.LOAD_ARG, rm.abi_arg_idx(inst.arg_idx), 0, 0, rm.operand_idx(if rec.has(inst,"dst") then inst.dst else { k: "stack", slot: inst.slot }), [
-      operand(4, 16, ty.hex16(inst.arg_idx)),
-      operand(1, 16, ty.hex16(rm.operand_idx(if rec.has(inst,"dst") then inst.dst else { k: "stack", slot: inst.slot })))
+    // LoadArg's OMIR shape is {op:"LoadArg", slot: N} (or {dst:{...}} for
+    // LoadArgReg) with NO arg_idx field -- FARD Prim currently only
+    // compiles single-argument functions, so the target is always rdi
+    // (arg0). Modeled as a plain register move (LOAD_SLOT), not LOAD_ARG:
+    // the simulator's LOAD_ARG goes through abi_arg_reg(0..5) -> fixed
+    // registers 2-7, which is a different numbering than fard_isa_regmap's
+    // named-register indices (rdi=8) and would misroute the value.
+    let src_operand = if rec.has(inst,"dst") then inst.dst else { k: "stack", slot: inst.slot } in
+    let rdi_idx = rm.reg_name_to_idx("rdi") in
+    isa_instr(op.LOAD_SLOT, rdi_idx, rm.operand_idx(src_operand), 0, rm.operand_idx(src_operand), [
+      operand(1, 16, ty.hex16(rdi_idx)),
+      operand(1, 16, ty.hex16(rm.operand_idx(src_operand)))
     ])
 
   else if op_ == "Jne" then

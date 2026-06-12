@@ -46,6 +46,7 @@ This repo targets Tier 2. Tier 3 requires silicon provisioning.
      fard_isa_sim.fard         simulator: all opcodes incl. LOAD_SLOT, ADD3/SUB3/MUL3/CMP3
      fard_isa_types.fard       FardVal layout (tag+4, payload+8), validation, hex helpers
      fard_isa.fard             top-level re-export
+     omir_isa_fixups.fard      resolves Label/Jne/Jmp/CallReloc into concrete PC targets
      omir_to_fard_isa.fard     maps OMIR ops to ISA instructions (legacy 13-op + FARD Prim
                                post-RA/peephole dialect via map_fard_prim_program)
      trust_semantics.fard      TRUST.READ/FINALIZE/LOCK/ATTEST/VERIFY semantics
@@ -84,6 +85,23 @@ Trust instructions:
    TRUST.VERIFY   assert prior_epoch_receipt matches expected digest, fault if not
 
 ---
+
+## Branch and Call Resolution
+
+omir_isa_fixups.fard resolves FARD Prim's Label/Jne/Jmp/CallReloc OMIR
+into concrete FARD-ISA PC targets, analogous to x86_64_fixups.fard but
+trivial: every ISA instruction is a fixed 16 bytes, so a target is just
+(mapped_instruction_index * 16). Verified end-to-end on max(10,42) with
+real if/else branches (BR_NE/BR_UNCOND), and on fact(5)'s CallReloc
+(self-recursive CALL_REL32/RET_I64 -- halts cleanly with a balanced
+call stack).
+
+Note: full numeric correctness of recursive programs (CallReloc) is
+not yet verified on the ISA -- FARD-ISA's flat 64-register file has no
+per-call-frame stack memory, so recursive calls currently alias
+caller/callee stack slots. The fixups pass itself (branch/call target
+resolution) is correct and tested; per-frame stack memory is a
+separate, future piece of work.
 
 ## Optimization Impact on Epoch Cost
 
@@ -165,8 +183,9 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_tier2_attestation.fard             3 passed
    fardrun test --program tests/test_fard_prim_omir_mapping.fard         4 passed
    fardrun test --program tests/test_retirement_reduction.fard           2 passed
+   fardrun test --program tests/test_branch_call_fixups.fard             3 passed
 
-   Total: 83 tests, all passing
+   Total: 86 tests, all passing
 
 ---
 

@@ -1,0 +1,77 @@
+/// omir_isa_fixups — resolve Label/Jne/Jmp/CallReloc into concrete PC
+/// targets for FARD-ISA, analogous to FARD Prim's x86_64_fixups.fard
+/// but trivial: every ISA instruction is a fixed 16 bytes, so a target
+/// is just (instruction_index * 16).
+///
+/// Two-pass:
+///   1. Walk the FARD Prim OMIR (pre-mapping), tracking the index each
+///      instruction WILL have in the mapped program (pseudo ops --
+///      Label/Prologue/Epilogue -- are dropped by
+///      omir_to_fard_isa.map_fard_prim_program and contribute no index).
+///      Record label_id -> mapped_index.
+///   2. Walk the mapped ISA program in lockstep with the same OMIR list;
+///      for each BR_NE/BR_UNCOND, rewrite imm64 = label_index * 16.
+///      For CALL_REL32 (self-recursive call), rewrite imm64 = entry_index * 16,
+///      where entry_index is the index of the first non-pseudo instruction
+///      (i.e. 0).
+
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+import("fard_isa_opcodes") as op
+
+fn key_label(id) { str.concat(["L", str.from(id)]) }
+
+fn is_pseudo(inst_op) {
+  inst_op == "Label" || inst_op == "Prologue" || inst_op == "Epilogue"
+}
+
+// Pass 1: map label id -> mapped-program instruction index
+fn build_label_index(omir_insts) {
+  list.fold(omir_insts, { idx: 0, labels: {} }, fn(acc, inst) {
+    if inst.op == "Label" then
+      { idx: acc.idx, labels: rec.set(acc.labels, key_label(inst.target.id), acc.idx) }
+    else
+      { idx: acc.idx + (if is_pseudo(inst.op) then 0 else 1), labels: acc.labels }
+  }).labels
+}
+
+// Entry index: index of the first non-pseudo instruction (always 0 for a
+// single-function self-recursive program -- the function's own entry
+// point, used as the CALL_REL32 target for self-tail/self-recursive calls).
+fn entry_index() { 0 }
+
+// Pass 2: walk OMIR insts and the mapped ISA program in lockstep (both
+// have one entry per non-pseudo OMIR instruction, in the same order),
+// rewriting branch/call targets.
+fn apply_fixups(omir_insts, isa_prog, label_index) {
+  let non_pseudo = list.filter(omir_insts, fn(i) { !is_pseudo(i.op) }) in
+  if list.len(non_pseudo) != list.len(isa_prog) then
+    panic(str.concat([
+      "omir_isa_fixups: length mismatch -- ",
+      str.from(list.len(non_pseudo)), " non-pseudo OMIR insts vs ",
+      str.from(list.len(isa_prog)), " mapped ISA instructions"
+    ]))
+  else
+    list.build(list.len(isa_prog), fn(i) {
+      let omir_i = list.get(non_pseudo, i) in
+      let isa_i  = list.get(isa_prog, i) in
+      let op_ = omir_i.op in
+      if op_ == "Jne" || op_ == "Jmp" then
+        let target_idx = rec.get(label_index, key_label(omir_i.target.id)) in
+        { ...isa_i, imm64: target_idx * 16 }
+      else if op_ == "CallReloc" then
+        { ...isa_i, imm64: entry_index() * 16 }
+      else
+        isa_i
+    })
+}
+
+// Convenience: full pipeline -- OMIR insts -> mapped+fixed-up ISA program
+fn lower_with_fixups(omir_insts, map_fard_prim_program) {
+  let label_index = build_label_index(omir_insts) in
+  let isa_prog = map_fard_prim_program(omir_insts) in
+  apply_fixups(omir_insts, isa_prog, label_index)
+}
+
+export { key_label, is_pseudo, build_label_index, entry_index, apply_fixups, lower_with_fixups }
