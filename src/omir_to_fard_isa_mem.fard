@@ -1,0 +1,267 @@
+/// omir_to_fard_isa_mem — memory-backed lowering of FARD Prim post-RA/
+/// peephole OMIR to FARD-ISA.
+///
+/// fard_isa_regmap.fard aliases every {k:"stack",slot:N} operand to a
+/// FIXED register-file index, regardless of call depth. That is correct
+/// for a single stack frame but WRONG for recursion: a recursive
+/// CallReloc reuses the same physical "slot registers" for the callee's
+/// frame, clobbering the caller's still-live locals before it reads
+/// them back (e.g. fact(5) computed 1 instead of 120).
+///
+/// This module instead gives FARD-ISA a real stack: register R_SP (idx
+/// 31, reserved in fard_isa_registers.fard) holds a memory address.
+/// {k:"stack",slot:N} becomes mem[R_SP + N] via LOAD_MEM64/STORE_MEM64
+/// (both already simulated). Prologue/Epilogue adjust R_SP by
+/// frame_size, exactly like real x86-64 `sub rsp,N` / `add rsp,N` --
+/// so each recursive call gets a fresh, non-aliased frame.
+///
+/// Named x86-64 registers (rax..r15, excluding rsp/rbp which FARD Prim's
+/// OMIR never references as operands) map to indices 1-14. Indices
+/// 15-19 are ISA-internal scratch registers used only during expansion
+/// of a single OMIR instruction (never live across instructions).
+///
+/// One OMIR instruction may expand to several ISA instructions, so
+/// branch/call fixups (label_index, entry index) must be computed over
+/// the FLATTENED output -- see map_program below.
+
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+import("fard_isa_opcodes") as op
+import("fard_isa_registers") as regs
+
+let R_SP = 31
+
+let SCRATCH_OFF  = 15  // holds a slot offset / frame_size immediate
+let SCRATCH_ADDR = 16  // holds SP + offset
+let SCRATCH_VAL1 = 17  // general scratch value
+let SCRATCH_VAL2 = 18  // second operand scratch (lhs/rhs)
+let SCRATCH_VAL3 = 19  // result scratch when dst is a stack slot
+
+fn reg_name_to_idx(name) {
+  if name == "rax" then 1 else
+  if name == "rcx" then 2 else
+  if name == "rdx" then 3 else
+  if name == "rbx" then 4 else
+  if name == "rsi" then 5 else
+  if name == "rdi" then 6 else
+  if name == "r8"  then 7 else
+  if name == "r9"  then 8 else
+  if name == "r10" then 9 else
+  if name == "r11" then 10 else
+  if name == "r12" then 11 else
+  if name == "r13" then 12 else
+  if name == "r14" then 13 else
+  if name == "r15" then 14 else
+  panic(str.concat(["omir_to_fard_isa_mem: unsupported register: ", name]))
+}
+
+let RAX = 1
+
+fn ii(opcode, rd, rs1, rs2, imm64) {
+  { opcode: opcode, rd: rd, rs1: rs1, rs2: rs2, imm64: imm64, operands: [] }
+}
+
+// Compute mem[SP + slot] address into `addr_reg`, using SCRATCH_OFF as
+// scratch for the offset immediate.
+fn addr_for_slot(slot, addr_reg) {
+  [
+    ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, slot),
+    ii(op.ADD3, addr_reg, R_SP, SCRATCH_OFF, 0)
+  ]
+}
+
+// Read operand `o` into register `tmp_reg` (if stack) or return its own
+// register index directly (if already a register, no instructions needed).
+fn read_operand(o, tmp_reg) {
+  if o.k == "reg" then
+    { insts: [], reg: reg_name_to_idx(o.name) }
+  else
+    {
+      insts: list.concat([
+        addr_for_slot(o.slot, SCRATCH_ADDR),
+        [ii(op.LOAD_MEM64, tmp_reg, SCRATCH_ADDR, 0, 0)]
+      ]),
+      reg: tmp_reg
+    }
+}
+
+// Write register `src_reg` into operand `o`.
+fn write_operand(o, src_reg) {
+  if o.k == "reg" then
+    let d = reg_name_to_idx(o.name) in
+    if d == src_reg then [] else [ii(op.LOAD_SLOT, d, src_reg, 0, src_reg)]
+  else
+    list.concat([
+      addr_for_slot(o.slot, SCRATCH_ADDR),
+      [ii(op.STORE_MEM64, SCRATCH_ADDR, src_reg, 0, 0)]
+    ])
+}
+
+fn cmp_predicate(cmp) {
+  if cmp == "eq" then 0 else
+  if cmp == "ne" then 1 else
+  if cmp == "lt" then 2 else
+  if cmp == "le" then 3 else
+  if cmp == "gt" then 4 else
+  5
+}
+
+// 3-address arithmetic/compare: dst = lhs OP rhs, any operand reg or stack.
+fn map_3addr(opcode3, dst, lhs, rhs, imm64) {
+  let lr = read_operand(lhs, SCRATCH_VAL1) in
+  let rr = read_operand(rhs, SCRATCH_VAL2) in
+  if dst.k == "reg" then
+    let d = reg_name_to_idx(dst.name) in
+    list.concat([lr.insts, rr.insts, [ii(opcode3, d, lr.reg, rr.reg, imm64)]])
+  else
+    list.concat([
+      lr.insts, rr.insts,
+      [ii(opcode3, SCRATCH_VAL3, lr.reg, rr.reg, imm64)],
+      write_operand(dst, SCRATCH_VAL3)
+    ])
+}
+
+/// Map ONE FARD Prim post-RA/peephole OMIR instruction to a (possibly
+/// empty, possibly multi-instruction) list of FARD-ISA instructions.
+/// Label maps to []. Prologue/Epilogue map to real SP-adjustment code.
+fn map_one(inst) {
+  let op_ = inst.op in
+
+  if op_ == "Label" then []
+
+  else if op_ == "Prologue" then
+    let alloc = [ ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, inst.frame_size),
+                   ii(op.SUB3, R_SP, R_SP, SCRATCH_OFF, 0) ] in
+    let saves = list.flatten(list.map(rec.getOr(inst, "used_callee_saved", []), fn(name) {
+      let r = reg_name_to_idx(name) in
+      [ ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, 8),
+        ii(op.SUB3, R_SP, R_SP, SCRATCH_OFF, 0),
+        ii(op.STORE_MEM64, R_SP, r, 0, 0) ]
+    })) in
+    list.concat([alloc, saves])
+
+  else if op_ == "Epilogue" then
+    // restore in reverse order (LIFO), matching x86 push/pop
+    let restores = list.flatten(list.map(list.reverse(rec.getOr(inst, "used_callee_saved", [])), fn(name) {
+      let r = reg_name_to_idx(name) in
+      [ ii(op.LOAD_MEM64, r, R_SP, 0, 0),
+        ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, 8),
+        ii(op.ADD3, R_SP, R_SP, SCRATCH_OFF, 0) ]
+    })) in
+    let dealloc = [ ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, inst.frame_size),
+                     ii(op.ADD3, R_SP, R_SP, SCRATCH_OFF, 0) ] in
+    list.concat([restores, dealloc])
+
+  else if op_ == "MovImm64" then
+    if inst.dst.k == "reg" then
+      [ii(op.LOAD_IMM64, reg_name_to_idx(inst.dst.name), 0, 0, inst.val)]
+    else
+      list.concat([
+        [ii(op.LOAD_IMM64, SCRATCH_VAL1, 0, 0, inst.val)],
+        write_operand(inst.dst, SCRATCH_VAL1)
+      ])
+
+  else if op_ == "MovRegToReg" || op_ == "MovStackToReg" || op_ == "MovRegToStack" || op_ == "MovStackToStack" || op_ == "CopyI64" then
+    let r = read_operand(inst.src, SCRATCH_VAL1) in
+    list.concat([r.insts, write_operand(inst.dst, r.reg)])
+
+  else if op_ == "AddRegStack" || op_ == "AddRegReg" then
+    let r = read_operand(inst.src, SCRATCH_VAL1) in
+    list.concat([r.insts, [ii(op.ADD3, RAX, RAX, r.reg, 0)]])
+
+  else if op_ == "SubI64" then
+    map_3addr(op.SUB3, inst.dst, inst.lhs, inst.rhs, 0)
+
+  else if op_ == "AddI64" then
+    map_3addr(op.ADD3, inst.dst, inst.lhs, inst.rhs, 0)
+
+  else if op_ == "MulI64" then
+    map_3addr(op.MUL3, inst.dst, inst.lhs, inst.rhs, 0)
+
+  else if op_ == "CmpI64" then
+    map_3addr(op.CMP3, inst.dst, inst.lhs, inst.rhs, cmp_predicate(inst.cmp))
+
+  else if op_ == "CmpStackZero" || op_ == "CmpRegZero" then
+    let r = read_operand(inst.src, SCRATCH_VAL1) in
+    list.concat([r.insts, [ii(op.CMP_ZERO, 0, 0, 0, r.reg)]])
+
+  else if op_ == "LoadArg" || op_ == "LoadArgReg" then
+    // Single-argument functions only: source -> rdi.
+    let src_operand = if rec.has(inst,"dst") then inst.dst else { k: "stack", slot: inst.slot } in
+    let r = read_operand(src_operand, SCRATCH_VAL1) in
+    list.concat([r.insts, write_operand({ k: "reg", name: "rdi" }, r.reg)])
+
+  else if op_ == "Jne" then
+    [ii(op.BR_NE, 0, 0, 0, 0)]          // target patched by map_program
+
+  else if op_ == "Jmp" then
+    [ii(op.BR_UNCOND, 0, 0, 0, 0)]      // target patched by map_program
+
+  else if op_ == "CallReloc" then
+    [ii(op.CALL_REL32, 0, 0, 0, 0)]     // target patched by map_program
+
+  else if op_ == "Ret" then
+    [ii(op.RET_I64, RAX, 0, 0, 0)]
+
+  else
+    panic(str.concat(["omir_to_fard_isa_mem: unmapped op: ", op_]))
+}
+
+fn key_label(id) { str.concat(["L", str.from(id)]) }
+
+// Entry point: instruction 0 of the expansion (start of Prologue's
+// SP-adjustment code) -- the self-recursive call target.
+fn entry_offset() { 0 }
+
+fn patch_imm64(prog, idx, value) {
+  list.build(list.len(prog), fn(i) {
+    let cur = list.get(prog, i) in
+    if i == idx then { ...cur, imm64: value } else cur
+  })
+}
+
+/// Map a full function body (list of OMIR instructions) to a flat list
+/// of FARD-ISA instructions, with all branch/call targets resolved to
+/// concrete PCs (instruction_index * 16).
+fn map_program(insts) {
+  let lists = list.map(insts, map_one) in
+  let lengths = list.map(lists, list.len) in
+
+  // offsets[i] = sum(lengths[0..i)) -- where inst i's expansion starts
+  // in the flattened output. label_index[Lid] = offsets[i] for the
+  // Label instruction with target.id == Lid (== position of the NEXT
+  // real instruction, since Label itself expands to []).
+  let scan = list.fold(list.build(list.len(insts), fn(i){i}), { off: 0, offsets: [], labels: {} }, fn(acc, i) {
+    let inst = list.get(insts, i) in
+    let labels2 = if inst.op == "Label"
+      then rec.set(acc.labels, key_label(inst.target.id), acc.off)
+      else acc.labels in
+    {
+      off: acc.off + list.get(lengths, i),
+      offsets: list.append(acc.offsets, acc.off),
+      labels: labels2
+    }
+  }) in
+
+  let flat = list.flatten(lists) in
+
+  // Patch Jne/Jmp/CallReloc in place using each instruction's offset.
+  list.fold(list.build(list.len(insts), fn(i){i}), flat, fn(acc, i) {
+    let inst = list.get(insts, i) in
+    let off = list.get(scan.offsets, i) in
+    if inst.op == "Jne" || inst.op == "Jmp" then
+      let target_off = rec.get(scan.labels, key_label(inst.target.id)) in
+      patch_imm64(acc, off, target_off * 16)
+    else if inst.op == "CallReloc" then
+      patch_imm64(acc, off, entry_offset() * 16)
+    else
+      acc
+  })
+}
+
+export {
+  R_SP, RAX,
+  reg_name_to_idx, read_operand, write_operand, map_one, map_program,
+  entry_offset
+}

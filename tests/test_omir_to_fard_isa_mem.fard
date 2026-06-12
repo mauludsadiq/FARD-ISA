@@ -1,0 +1,69 @@
+/// Memory-backed mapping: FARD Prim post-RA/peephole OMIR for fact/fib,
+/// run through omir_to_fard_isa_mem (real per-frame stack memory via
+/// R_SP), checked for actual numeric correctness on recursion.
+
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fardlex")   as lex
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fardparse") as par
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fard_lower") as lower
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/fard_ir_to_ocir") as bridge
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/lower_ocir_to_omir") as omir_lower
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_tco") as tco
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_regalloc") as ra
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_peephole") as peep
+import("../src/omir_to_fard_isa_mem") as m
+import("../src/fard_isa_sim") as sim
+import("../src/fard_isa_types") as ty
+import("std/list") as list
+import("std/str") as str
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+let SP_BASE = 65536
+
+fn compile_optimized(src) {
+  let raw = tco.tco_module(omir_lower.lower_module(
+    bridge.lower_module(
+      lower.lower_program(par.parse_module(lex.tokenize(src), 0).node)))) in
+  list.get(peep.peephole_module(ra.regalloc_module(raw)).funcs, 0).insts
+}
+
+fn run_with_arg(insts, arg_val, max_steps) {
+  let prog = m.map_program(insts) in
+  let state0 = ty.initial_state(1, genesis) in
+  let regs1 = ty.reg_set(state0.regs, m.R_SP, ty.fardval_int(SP_BASE)) in
+  let regs2 = ty.reg_set(regs1, m.reg_name_to_idx("rdi"), ty.fardval_int(arg_val)) in
+  let state = { ...state0, regs: regs2 } in
+  sim.run(prog, state, max_steps)
+}
+
+test "fact(5) = 120 via memory-backed FARD-ISA stack" {
+  let insts = compile_optimized("fn fact(n){if n==0 then 1 else n*fact(n-1)}\nfact(5)") in
+  let final = run_with_arg(insts, 5, 2000) in
+  final.regs[str.from(m.RAX)].payload == 120
+}
+
+// NOTE: fib(8) takes ~100 minutes due to fard_isa_memory's full
+// memory-root rehash on every STORE_MEM64 (O(memory size) per store,
+// and this lowering does several stores per OMIR instruction). This
+// is a pre-existing performance issue in fard_isa_memory.fard, not in
+// the mapping itself -- fib(5)=5 was verified manually with the same
+// code path (1217 steps, prog_len=119) before this test was trimmed
+// to fib(3) to keep the suite fast. Revisit fard_isa_memory's
+// memory_root (e.g. incremental/merkle update instead of full rehash)
+// before testing larger recursive programs end-to-end.
+test "fib(3) = 2 via memory-backed FARD-ISA stack" {
+  let insts = compile_optimized("fn fib(n){if n<=1 then n else fib(n-1)+fib(n-2)}\nfib(3)") in
+  let final = run_with_arg(insts, 3, 600) in
+  final.regs[str.from(m.RAX)].payload == 2
+}
+
+test "max(10,42) = 42 via memory-backed FARD-ISA stack (non-recursive control flow)" {
+  let insts = compile_optimized("fn max(a,b){if a>b then a else b}\nmax(10,42)") in
+  let prog = m.map_program(insts) in
+  let state0 = ty.initial_state(1, genesis) in
+  let regs1 = ty.reg_set(state0.regs, m.R_SP, ty.fardval_int(SP_BASE)) in
+  let regs2 = ty.reg_set(regs1, m.reg_name_to_idx("rdi"), ty.fardval_int(10)) in
+  let regs3 = ty.reg_set(regs2, m.reg_name_to_idx("rsi"), ty.fardval_int(42)) in
+  let state = { ...state0, regs: regs3 } in
+  let final = sim.run(prog, state, 500) in
+  final.halted && final.regs[str.from(m.RAX)].payload == 42
+}

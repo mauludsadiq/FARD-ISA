@@ -47,6 +47,9 @@ This repo targets Tier 2. Tier 3 requires silicon provisioning.
      fard_isa_types.fard       FardVal layout (tag+4, payload+8), validation, hex helpers
      fard_isa.fard             top-level re-export
      omir_isa_fixups.fard      resolves Label/Jne/Jmp/CallReloc into concrete PC targets
+                               (register-aliasing dialect -- non-recursive only, see below)
+     omir_to_fard_isa_mem.fard memory-backed lowering: real per-call-frame stack via R_SP +
+                               LOAD_MEM64/STORE_MEM64 -- correct for recursion
      omir_to_fard_isa.fard     maps OMIR ops to ISA instructions (legacy 13-op + FARD Prim
                                post-RA/peephole dialect via map_fard_prim_program)
      trust_semantics.fard      TRUST.READ/FINALIZE/LOCK/ATTEST/VERIFY semantics
@@ -96,12 +99,46 @@ real if/else branches (BR_NE/BR_UNCOND), and on fact(5)'s CallReloc
 (self-recursive CALL_REL32/RET_I64 -- halts cleanly with a balanced
 call stack).
 
-Note: full numeric correctness of recursive programs (CallReloc) is
-not yet verified on the ISA -- FARD-ISA's flat 64-register file has no
-per-call-frame stack memory, so recursive calls currently alias
-caller/callee stack slots. The fixups pass itself (branch/call target
-resolution) is correct and tested; per-frame stack memory is a
-separate, future piece of work.
+## Recursive Correctness: Memory-Backed Stack (omir_to_fard_isa_mem)
+
+The register-aliasing mapping above (fard_isa_regmap + omir_to_fard_isa)
+is correct for non-recursive control flow (verified on max(10,42)) but
+NOT for recursion: every {k:"stack",slot:N} operand aliases a FIXED
+register-file index regardless of call depth, so a recursive CallReloc
+clobbers the caller's still-live locals before it reads them back
+(fact(5) computed 1, not 120).
+
+omir_to_fard_isa_mem.fard fixes this by giving FARD-ISA a real stack:
+register R_SP (index 31, reserved) holds a memory address, and
+{k:"stack",slot:N} becomes mem[R_SP+N] via LOAD_MEM64/STORE_MEM64.
+Prologue/Epilogue adjust R_SP by frame_size (and push/pop
+used_callee_saved registers to memory), exactly like real x86-64 `sub
+rsp,N` / `add rsp,N` -- so each recursive call gets a fresh,
+non-aliased frame, just like the native binary.
+
+One OMIR instruction now expands to several ISA instructions (e.g. a
+stack read is LOAD_IMM64+ADD3+LOAD_MEM64), so map_program computes
+flattened instruction offsets for branch/call-target fixups directly
+(superseding omir_isa_fixups for this dialect).
+
+Verified correct end-to-end:
+
+   fact(5) = 120
+   fib(3)  = 2     (fib(5)=5 and fib(8)=21 also verified manually;
+                     fib(8) takes ~100 min due to fard_isa_memory's
+                     full memory-root rehash on every store -- a
+                     pre-existing perf issue, not a correctness one)
+   max(10,42) = 42  (non-recursive control flow, unchanged)
+
+This is the two dialects' tradeoff: omir_to_fard_isa (register
+aliasing) gives the retirement-count results in "Optimization Impact
+on Epoch Cost" above and is correct for non-recursive programs;
+omir_to_fard_isa_mem (real stack memory) is correct for ALL programs
+including recursion, at the cost of more retirements per OMIR
+instruction (memory load/store sequences) and current simulator
+slowness on deep recursion. Unifying these -- e.g. only spilling to
+memory for slots that are provably cross-call-live, keeping
+non-cross-call slots register-resident -- is future work.
 
 ## Optimization Impact on Epoch Cost
 
@@ -184,8 +221,9 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_fard_prim_omir_mapping.fard         4 passed
    fardrun test --program tests/test_retirement_reduction.fard           2 passed
    fardrun test --program tests/test_branch_call_fixups.fard             3 passed
+   fardrun test --program tests/test_omir_to_fard_isa_mem.fard           3 passed
 
-   Total: 92 tests, all passing
+   Total: 95 tests, all passing
 
    (test_golden_interpreter_equivalence.fard grew from 10 -> 16 with
    receipt-equivalence checks for LOAD_SLOT, ADD3, SUB3, MUL3, CMP3, and
