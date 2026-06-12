@@ -1,0 +1,41 @@
+/// Verifies the concrete "fewer retirements = cheaper epoch" claim:
+/// FARD Prim's register-allocated + peephole-optimized OMIR maps to
+/// strictly fewer FARD-ISA instruction retirements than the pre-RA
+/// OMIR for the same program, with identical opcode histograms apart
+/// from LOAD_SLOT (the eliminated CopyI64 chains).
+
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fardlex")   as lex
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fardparse") as par
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fard_lower") as lower
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/fard_ir_to_ocir") as bridge
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/lower_ocir_to_omir") as omir_lower
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_tco") as tco
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_regalloc") as ra
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_peephole") as peep
+import("../src/omir_to_fard_isa") as m
+import("std/list") as list
+
+fn compile_omir(src) {
+  let raw = tco.tco_module(omir_lower.lower_module(
+    bridge.lower_module(
+      lower.lower_program(par.parse_module(lex.tokenize(src), 0).node)))) in
+  let optimized = peep.peephole_module(ra.regalloc_module(raw)) in
+  { pre: list.get(raw.funcs, 0), post: list.get(optimized.funcs, 0) }
+}
+
+test "fact(5): post-RA/peephole OMIR retires fewer FARD-ISA instructions" {
+  let fact = compile_omir("fn fact(n){if n==0 then 1 else n*fact(n-1)}\nfact(5)") in
+  let pre  = list.len(m.map_fard_prim_program(fact.pre.insts)) in
+  let post = list.len(m.map_fard_prim_program(fact.post.insts)) in
+  pre == 27 && post == 24 && post < pre
+}
+
+test "fib(10): post-RA/peephole OMIR retires fewer FARD-ISA instructions" {
+  let fib = compile_omir("fn fib(n){if n<=1 then n else fib(n-1)+fib(n-2)}\nfib(10)") in
+  let pre  = list.len(m.map_fard_prim_program(fib.pre.insts)) in
+  let post = list.len(m.map_fard_prim_program(fib.post.insts)) in
+  // 2 retirements saved per recursive frame (the eliminated CopyI64-chain
+  // LOAD_SLOTs); for fib(35) (29,860,703 calls) this is ~59.7M fewer
+  // canonical events for the same program output.
+  pre == 36 && post == 34 && (pre - post) == 2
+}

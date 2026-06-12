@@ -12,10 +12,12 @@
 import("std/rec") as rec
 import("std/str") as str
 
-// NOTE: ISA register 0 is r_zero (hardwired unit, writes discarded -- see
-// fard_isa_registers.fard R_ZERO). All FARD Prim registers/slots are
-// therefore offset by +1 to avoid colliding with it. Valid range 1-31
-// (REG_COUNT=32), giving 16 named registers (1-16) + 15 stack slots (17-31).
+// NOTE: ISA register 0 is r_zero (hardwired unit, writes discarded), and
+// indices 30-31 (R_FP/R_SP) are reserved -- see fard_isa_registers.fard.
+// REG_COUNT=64. Layout:
+//   1-16    named x86-64 registers: rax,rcx,rdx,rbx,rsp,rbp,rsi,rdi,r8-r15
+//   17-31   reserved (R_FP=30, R_SP=31 in particular)
+//   32-63   stack slots -8,-16,...,-256 (32 slots; slot -8N -> index 31+N)
 
 fn reg_name_to_idx(name) {
   if name == "rax" then 1 else
@@ -38,12 +40,12 @@ fn reg_name_to_idx(name) {
 }
 
 fn slot_to_idx(slot) {
-  // slot is negative, multiple of 8: -8 -> 17, -16 -> 18, ... -120 -> 31
+  // slot is negative, multiple of 8: -8 -> 32, -16 -> 33, ... -256 -> 63
   let n = (0 - slot) / 8 in
-  if n < 1 || n > 15 then
-    panic(str.concat(["fard_isa_regmap: stack slot out of range (max 15 slots): ", str.from(slot)]))
+  if n < 1 || n > 32 then
+    panic(str.concat(["fard_isa_regmap: stack slot out of range (max 32 slots / -256 bytes): ", str.from(slot)]))
   else
-    16 + n
+    31 + n
 }
 
 // operand: {k:"reg",name:...} | {k:"stack",slot:...}

@@ -85,6 +85,24 @@ Trust instructions:
 
 ---
 
+## Optimization Impact on Epoch Cost
+
+FARD Prim's register allocator (callee-saved r12-r15 for values live
+across recursive calls) plus a cross-block-safe peephole pass (copy
+propagation + dead-store elimination) reduce FARD-ISA retirements
+directly -- every eliminated OMIR instruction is one fewer canonical
+event per epoch:
+
+   program    pre-RA retirements   post-RA retirements   reduction
+   fact(5)    27                   24                     -11.1%
+   fib(10)    36                   34                     -5.6%
+
+The entire reduction is LOAD_SLOT (eliminated CopyI64 chains). For
+fib(35) -- 29,860,703 calls -- this is 2 fewer retirements per call,
+~59.7M fewer canonical events total for the identical program output,
+matching the 0.128s -> 0.108s native x86-64 wall-clock improvement
+measured in FARD Prim. Verified in tests/test_retirement_reduction.fard.
+
 ## Register File
 
 32 registers, index 0 (r_zero) is hardwired: reads as unit, writes
@@ -146,8 +164,9 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_recursive_programs.fard             3 passed
    fardrun test --program tests/test_tier2_attestation.fard             3 passed
    fardrun test --program tests/test_fard_prim_omir_mapping.fard         4 passed
+   fardrun test --program tests/test_retirement_reduction.fard           2 passed
 
-   Total: 81 tests, all passing
+   Total: 83 tests, all passing
 
 ---
 

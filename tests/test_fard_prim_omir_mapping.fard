@@ -57,7 +57,7 @@ test "CmpRegZero sets flags" {
 test "regmap: registers and slots are distinct and in range" {
   let r10 = rm.reg_name_to_idx("r10") in
   let r15 = rm.reg_name_to_idx("r15") in
-  let s8  = rm.slot_to_idx(-8) in
-  let s120 = rm.slot_to_idx(-120) in
-  r10 == 11 && r15 == 16 && s8 == 17 && s120 == 31 && s8 != r15
+  let s8   = rm.slot_to_idx(-8) in
+  let s256 = rm.slot_to_idx(-256) in
+  r10 == 11 && r15 == 16 && s8 == 32 && s256 == 63 && s8 != r15
 }

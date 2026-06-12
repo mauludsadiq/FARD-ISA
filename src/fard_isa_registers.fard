@@ -2,7 +2,7 @@ import("std/str") as str
 import("std/list") as list
 import("fard_isa_types") as ty
 
-let REG_COUNT = 32
+let REG_COUNT = 64
 
 let R_ZERO = 0
 let R_RET  = 1
