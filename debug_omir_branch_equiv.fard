@@ -1,0 +1,18 @@
+import("src/golden_omir_interpreter") as golden
+import("src/omir_to_fard_isa") as lower
+import("src/fard_isa_sim") as sim
+import("src/fard_isa_types") as ty
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+let omir = [
+  { kind: "mov_imm64", dst: 1, val: 7 },
+  { kind: "cmp_zero", slot: 1 },
+  { kind: "br_if_ne", target: 4 },
+  { kind: "mov_imm64", dst: 2, val: 111 },
+  { kind: "mov_imm64", dst: 2, val: 222 },
+  { kind: "halt" }
+]
+let isa = lower.map_program(omir)
+let g = golden.run(omir, genesis)
+let s = sim.run(isa, ty.initial_state(1, genesis), 1000)
+{ isa: isa, golden_final: g.final_state, sim_final: s }

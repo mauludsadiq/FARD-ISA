@@ -3,6 +3,7 @@ import("std/rec") as rec
 import("std/str") as str
 import("fard_isa_opcodes") as op
 import("fard_isa_types") as ty
+import("fard_isa_regmap") as rm
 
 fn operand(kind, width, hex_bytes) {
   { kind: kind, width: width, bytes: hex_bytes }
@@ -110,4 +111,114 @@ fn map_program(omir_ops) {
   })
 }
 
-export { operand, isa_instr, map_omir, map_program }
+
+// ── FARD Prim post-RA/peephole OMIR -> FARD-ISA ────────────────────────────────
+//
+// FARD Prim's omir_regalloc.fard / omir_peephole.fard emit instructions with
+// {op:"...", dst:{k:"reg"|"stack",...}, ...} shape (vs. the lowercase `kind`
+// shape from earlier OMIR stages). These map onto the existing register-file
+// model directly via fard_isa_regmap: every {k:"reg",name} or {k:"stack",slot}
+// operand becomes a register-file index 0-31.
+
+fn map_fard_prim_omir(inst) {
+  let op_ = inst.op in
+
+  if op_ == "MovImm64" then
+    isa_instr(op.LOAD_IMM64, rm.operand_idx(inst.dst), 0, 0, inst.val, [
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.dst))),
+      operand(2, 64, ty.hex64(inst.val))
+    ])
+
+  else if op_ == "MovRegToReg" || op_ == "MovStackToReg" || op_ == "MovRegToStack" || op_ == "MovStackToStack" || op_ == "CopyI64" then
+    // Unified register-to-register move (LOAD_SLOT reused: rd <- [rs1])
+    isa_instr(op.LOAD_SLOT, rm.operand_idx(inst.dst), rm.operand_idx(inst.src), 0, rm.operand_idx(inst.src), [
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.dst))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.src)))
+    ])
+
+  else if op_ == "AddRegStack" || op_ == "AddRegReg" then
+    // rax += operand  (ADD_SLOT: rd is accumulator, imm64 is source reg index)
+    isa_instr(op.ADD_SLOT, rm.reg_name_to_idx("rax"), 0, 0, rm.operand_idx(inst.src), [
+      operand(1, 16, ty.hex16(rm.reg_name_to_idx("rax"))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.src)))
+    ])
+
+  else if op_ == "SubI64" then
+    isa_instr(op.SUB3, rm.operand_idx(inst.dst), rm.operand_idx(inst.lhs), rm.operand_idx(inst.rhs), 0, [
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.dst))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.lhs))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.rhs)))
+    ])
+
+  else if op_ == "AddI64" then
+    isa_instr(op.ADD3, rm.operand_idx(inst.dst), rm.operand_idx(inst.lhs), rm.operand_idx(inst.rhs), 0, [
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.dst))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.lhs))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.rhs)))
+    ])
+
+  else if op_ == "MulI64" then
+    isa_instr(op.MUL3, rm.operand_idx(inst.dst), rm.operand_idx(inst.lhs), rm.operand_idx(inst.rhs), 0, [
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.dst))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.lhs))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.rhs)))
+    ])
+
+  else if op_ == "CmpI64" then
+    let pred = cmp_predicate(inst.cmp) in
+    isa_instr(op.CMP3, rm.operand_idx(inst.dst), rm.operand_idx(inst.lhs), rm.operand_idx(inst.rhs), pred, [
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.dst))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.lhs))),
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.rhs))),
+      operand(6, 64, ty.hex64(pred))
+    ])
+
+  else if op_ == "CmpStackZero" || op_ == "CmpRegZero" then
+    isa_instr(op.CMP_ZERO, 0, 0, 0, rm.operand_idx(inst.src), [
+      operand(1, 16, ty.hex16(rm.operand_idx(inst.src)))
+    ])
+
+  else if op_ == "LoadArg" || op_ == "LoadArgReg" then
+    isa_instr(op.LOAD_ARG, rm.abi_arg_idx(inst.arg_idx), 0, 0, rm.operand_idx(if rec.has(inst,"dst") then inst.dst else { k: "stack", slot: inst.slot }), [
+      operand(4, 16, ty.hex16(inst.arg_idx)),
+      operand(1, 16, ty.hex16(rm.operand_idx(if rec.has(inst,"dst") then inst.dst else { k: "stack", slot: inst.slot })))
+    ])
+
+  else if op_ == "Jne" then
+    isa_instr(op.BR_NE, 0, 0, 0, 0, [])  // target patched by fixups pass
+
+  else if op_ == "Jmp" then
+    isa_instr(op.BR_UNCOND, 0, 0, 0, 0, [])  // target patched by fixups pass
+
+  else if op_ == "CallReloc" then
+    isa_instr(op.CALL_REL32, 0, 0, 0, 0, [])  // target patched by fixups pass
+
+  else if op_ == "Ret" then
+    isa_instr(op.RET_I64, rm.reg_name_to_idx("rax"), 0, 0, 0, [
+      operand(1, 16, ty.hex16(rm.reg_name_to_idx("rax")))
+    ])
+
+  else if op_ == "Label" || op_ == "Prologue" || op_ == "Epilogue" then
+    { pseudo: true, label: op_ }
+
+  else
+    { pseudo: true, error: str.concat(["map_fard_prim_omir: unmapped op: ", op_]) }
+}
+
+// cmp predicate encoding for CMP3.imm64: 0=eq 1=ne 2=lt 3=le 4=gt 5=ge
+fn cmp_predicate(cmp) {
+  if cmp == "eq" then 0 else
+  if cmp == "ne" then 1 else
+  if cmp == "lt" then 2 else
+  if cmp == "le" then 3 else
+  if cmp == "gt" then 4 else
+  5
+}
+
+fn map_fard_prim_program(insts) {
+  list.filter(list.map(insts, map_fard_prim_omir), fn(x) {
+    !(rec.has(x, "pseudo") && x.pseudo)
+  })
+}
+
+export { operand, isa_instr, map_omir, map_program, map_fard_prim_omir, map_fard_prim_program, cmp_predicate }

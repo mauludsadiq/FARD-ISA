@@ -1,0 +1,16 @@
+import("src/fard_isa_sim") as sim
+import("src/fard_isa_opcodes") as op
+import("src/fard_isa_types") as ty
+import("src/omir_to_fard_isa") as lower
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+let program = [
+  lower.isa_instr(op.CALL_REL32, 0, 0, 0, 48, [lower.operand(5, 64, ty.hex64(48))]),
+  lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 9, [lower.operand(1, 16, ty.hex16(2)), lower.operand(2, 64, ty.hex64(9))]),
+  lower.isa_instr(op.HALT, 0, 0, 0, 0, []),
+  lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 42, [lower.operand(1, 16, ty.hex16(1)), lower.operand(2, 64, ty.hex64(42))]),
+  lower.isa_instr(op.RET_I64, 1, 0, 0, 0, [lower.operand(1, 16, ty.hex16(1))])
+]
+
+sim.run(program, ty.initial_state(1, genesis), 20)

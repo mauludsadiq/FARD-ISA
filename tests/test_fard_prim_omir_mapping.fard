@@ -1,0 +1,63 @@
+import("../src/fard_isa_opcodes") as op
+import("../src/fard_isa_types") as ty
+import("../src/omir_to_fard_isa") as m
+import("../src/fard_isa_regmap") as rm
+import("../src/fard_isa_sim") as sim
+import("std/list") as list
+import("std/str") as str
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+test "ADD3: 10 + 32 = 42" {
+  let insts = [
+    { op: "MovImm64", dst: { k: "stack", slot: -8 },  val: 10 },
+    { op: "MovImm64", dst: { k: "stack", slot: -16 }, val: 32 },
+    { op: "AddI64", dst: { k: "stack", slot: -24 },
+      lhs: { k: "stack", slot: -8 }, rhs: { k: "stack", slot: -16 } },
+    { op: "MovStackToReg", dst: { k: "reg", name: "rax" }, src: { k: "stack", slot: -24 } },
+    { op: "Ret" }
+  ] in
+  let prog = m.map_fard_prim_program(insts) in
+  let final = sim.run(prog, ty.initial_state(1, genesis), 100) in
+  final.regs[str.from(rm.reg_name_to_idx("rax"))].payload == 42
+}
+
+test "SUB3 / MUL3 / CMP3 basic arithmetic" {
+  let insts = [
+    { op: "MovImm64", dst: { k: "reg", name: "r10" }, val: 7 },
+    { op: "MovImm64", dst: { k: "reg", name: "r11" }, val: 2 },
+    { op: "SubI64", dst: { k: "reg", name: "r12" },
+      lhs: { k: "reg", name: "r10" }, rhs: { k: "reg", name: "r11" } },   // r12 = 5
+    { op: "MulI64", dst: { k: "reg", name: "r13" },
+      lhs: { k: "reg", name: "r12" }, rhs: { k: "reg", name: "r11" } },   // r13 = 10
+    { op: "CmpI64", dst: { k: "reg", name: "r14" }, cmp: "gt",
+      lhs: { k: "reg", name: "r13" }, rhs: { k: "reg", name: "r10" } },   // r14 = (10>7) = 1
+    { op: "MovRegToReg", dst: { k: "reg", name: "rax" }, src: { k: "reg", name: "r13" } },
+    { op: "Ret" }
+  ] in
+  let prog = m.map_fard_prim_program(insts) in
+  let final = sim.run(prog, ty.initial_state(1, genesis), 100) in
+  let mul_ok = final.regs[str.from(rm.reg_name_to_idx("rax"))].payload == 10 in
+  let cmp_ok = final.regs[str.from(rm.reg_name_to_idx("r14"))].payload == 1 in
+  mul_ok && cmp_ok
+}
+
+test "CmpRegZero sets flags" {
+  let insts = [
+    { op: "MovImm64", dst: { k: "reg", name: "r10" }, val: 0 },
+    { op: "CmpRegZero", src: { k: "reg", name: "r10" } },
+    { op: "MovImm64", dst: { k: "reg", name: "rax" }, val: 0 },
+    { op: "Ret" }
+  ] in
+  let prog = m.map_fard_prim_program(insts) in
+  let final = sim.run(prog, ty.initial_state(1, genesis), 100) in
+  final.flags == 1
+}
+
+test "regmap: registers and slots are distinct and in range" {
+  let r10 = rm.reg_name_to_idx("r10") in
+  let r15 = rm.reg_name_to_idx("r15") in
+  let s8  = rm.slot_to_idx(-8) in
+  let s120 = rm.slot_to_idx(-120) in
+  r10 == 11 && r15 == 16 && s8 == 17 && s120 == 31 && s8 != r15
+}

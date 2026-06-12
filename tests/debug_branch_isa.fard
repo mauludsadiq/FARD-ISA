@@ -1,0 +1,13 @@
+import("../src/omir_to_fard_isa") as lower
+import("std/list") as list
+
+let omir = [
+  { kind: "mov_imm64", dst: 1, val: 7 },
+  { kind: "cmp_zero", slot: 1 },
+  { kind: "br_if_ne", target: 4 },
+  { kind: "mov_imm64", dst: 2, val: 111 },
+  { kind: "mov_imm64", dst: 2, val: 222 },
+  { kind: "halt" }
+]
+let isa = lower.map_program(omir)
+list.len(isa)

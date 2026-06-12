@@ -1,0 +1,29 @@
+import("src/fard_isa_sim") as sim
+import("src/fard_isa_opcodes") as op
+import("src/fard_isa_types") as ty
+import("src/omir_to_fard_isa") as lower
+import("src/fard_isa_memory") as mem
+import("src/trust_semantics") as trust
+import("src/canonical_event_v1") as event
+import("std/list") as list
+import("std/str") as str
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+let program = [
+  lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 1024, [lower.operand(1, 16, ty.hex16(1)), lower.operand(2, 64, ty.hex64(1024))]),
+  lower.isa_instr(op.TRUST_ATTEST, 0, 1, 0, 0, [lower.operand(1, 16, ty.hex16(1))]),
+  lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+]
+
+let initial = ty.initial_state(1, genesis)
+let final = sim.run(program, initial, 20)
+let expected_d = trust.attest("FARD_SIM_CHIP_V1", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 0, 1, ty.zero_digest(), event.receipt_next(genesis, list.get(final.events, 0).digest), 0)
+let expected_h = str.slice(expected_d, 7, str.len(expected_d))
+let observed_h = str.concat(list.build(32, fn(i) { ty.hex8(mem.load_byte(final.memory, 1024 + i)) }))
+{
+  expected: expected_h,
+  observed: observed_h,
+  attest_counter: final.attest_counter,
+  attest_event: list.get(final.events, 1)
+}

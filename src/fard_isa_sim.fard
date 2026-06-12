@@ -58,6 +58,15 @@ fn execute(state, instr) {
     let newv = ty.fardval_int(instr.imm64) in
     let s2 = write_reg(state, instr.rd, newv) in
     transition_result(state.pc + 16, state.flags, state.privilege, [], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.LOAD_SLOT then
+    // Generic register-to-register move: rd <- regs[rs1]
+    // (FARD Prim's register allocator only emits register operands here;
+    // memory-backed slots are represented as additional register-file
+    // entries via fard_isa_regmap, not as separate memory.)
+    let src = read_reg(state, instr.rs1) in
+    let old = read_reg(state, instr.rd) in
+    let s2 = write_reg(state, instr.rd, src) in
+    transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: src}], [{reg_index: instr.rd, old_value: old, new_value: src}], [], [], event.result_digest_value(src), event.trap_digest_none(), false, s2)
   else if instr.opcode == op.STORE_PARAM then
     let arg_r = regs.abi_arg_reg(instr.rd) in
     let src = read_reg(state, arg_r) in
@@ -96,6 +105,54 @@ fn execute(state, instr) {
       let newv = ty.fardval_int(lhs.payload + rhs.payload) in
       let s2 = write_reg(state, instr.rd, newv) in
       transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rd, value: lhs}, {reg_index: instr.imm64, value: rhs}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.ADD3 then
+    let lhs = read_reg(state, instr.rs1) in
+    let rhs = read_reg(state, instr.rs2) in
+    if lhs.tag != ty.TAG_INT || rhs.tag != ty.TAG_INT then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [], [], [], event.result_digest_unit(), event.trap_digest(2, "badtag"), true, state)
+    else
+      let old = read_reg(state, instr.rd) in
+      let newv = ty.fardval_int(lhs.payload + rhs.payload) in
+      let s2 = write_reg(state, instr.rd, newv) in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.SUB3 then
+    let lhs = read_reg(state, instr.rs1) in
+    let rhs = read_reg(state, instr.rs2) in
+    if lhs.tag != ty.TAG_INT || rhs.tag != ty.TAG_INT then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [], [], [], event.result_digest_unit(), event.trap_digest(2, "badtag"), true, state)
+    else
+      let old = read_reg(state, instr.rd) in
+      let newv = ty.fardval_int(lhs.payload - rhs.payload) in
+      let s2 = write_reg(state, instr.rd, newv) in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.MUL3 then
+    let lhs = read_reg(state, instr.rs1) in
+    let rhs = read_reg(state, instr.rs2) in
+    if lhs.tag != ty.TAG_INT || rhs.tag != ty.TAG_INT then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [], [], [], event.result_digest_unit(), event.trap_digest(2, "badtag"), true, state)
+    else
+      let old = read_reg(state, instr.rd) in
+      let newv = ty.fardval_int(lhs.payload * rhs.payload) in
+      let s2 = write_reg(state, instr.rd, newv) in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
+  else if instr.opcode == op.CMP3 then
+    // imm64 encodes the comparison predicate: 0=eq 1=ne 2=lt 3=le 4=gt 5=ge
+    let lhs = read_reg(state, instr.rs1) in
+    let rhs = read_reg(state, instr.rs2) in
+    if lhs.tag != ty.TAG_INT || rhs.tag != ty.TAG_INT then
+      transition_result(state.pc, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [], [], [], event.result_digest_unit(), event.trap_digest(2, "badtag"), true, state)
+    else
+      let p = instr.imm64 in
+      let result = if p == 0 then lhs.payload == rhs.payload else
+                    if p == 1 then lhs.payload != rhs.payload else
+                    if p == 2 then lhs.payload < rhs.payload else
+                    if p == 3 then lhs.payload <= rhs.payload else
+                    if p == 4 then lhs.payload > rhs.payload else
+                    lhs.payload >= rhs.payload in
+      let old = read_reg(state, instr.rd) in
+      let newv = ty.fardval_int(if result then 1 else 0) in
+      let s2 = write_reg(state, instr.rd, newv) in
+      transition_result(state.pc + 16, state.flags, state.privilege, [{reg_index: instr.rs1, value: lhs}, {reg_index: instr.rs2, value: rhs}], [{reg_index: instr.rd, old_value: old, new_value: newv}], [], [], event.result_digest_value(newv), event.trap_digest_none(), false, s2)
   else if instr.opcode == op.FVAL_BOX_I64 then
     let src = read_reg(state, instr.rs1) in
     let old = read_reg(state, instr.rd) in

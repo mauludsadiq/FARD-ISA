@@ -1,0 +1,37 @@
+import("../apps/fard_eval") as ev
+
+test "fard_eval while_item returns final state and steps" {
+  let module = {
+    items: [
+      {
+        t: "while_item",
+        init: { t: "int", v: "0" },
+        cond: {
+          t: "fn",
+          params: ["s"],
+          body: {
+            t: "bin",
+            op: "<",
+            left: { t: "var", v: "s" },
+            right: { t: "int", v: "5" }
+          }
+        },
+        body: {
+          t: "fn",
+          params: ["s"],
+          body: {
+            t: "bin",
+            op: "+",
+            left: { t: "var", v: "s" },
+            right: { t: "int", v: "1" }
+          }
+        }
+      }
+    ]
+  } in
+  let r = ev.eval_module(module) in
+  r.t == "record" &&
+  r.v.value.v == 5 &&
+  r.v.steps.v == 5 &&
+  r.v.chain_hex.v == "0"
+}

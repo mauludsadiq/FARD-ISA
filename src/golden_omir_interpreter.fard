@@ -71,10 +71,10 @@ fn eval_op(state, op) {
     let f = if v.payload == 0 then 1 else 0 in
     { ...state, flags: f, pc: state.pc + 1 }
 
-  else if k == "br_ne" || k == "br_if_ne" then
+  else if k == "br_ne" || k == "br_if_ne" || k == "jne" then
     if state.flags != 1 then { ...state, pc: op.target } else { ...state, pc: state.pc + 1 }
 
-  else if k == "br_uncond" then
+  else if k == "br_uncond" || k == "jmp" then
     { ...state, pc: op.target }
 
   else if k == "load_arg" then
@@ -87,7 +87,7 @@ fn eval_op(state, op) {
     let src = reg_read(state, arg_r) in
     { ...reg_write(state, op.slot, src), pc: state.pc + 1 }
 
-  else if k == "call_rel32" then
+  else if k == "call_rel32" || k == "call_reloc" then
     { ...state, call_stack: list.append(state.call_stack, state.pc + 1), pc: op.target }
 
   else if k == "ret_i64" then

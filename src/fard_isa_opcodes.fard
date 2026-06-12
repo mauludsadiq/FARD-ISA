@@ -10,6 +10,10 @@ let STORE_MEM64  = 262
 
 let ADD_SLOT     = 512
 let CMP_ZERO     = 513
+let ADD3         = 514
+let SUB3         = 515
+let MUL3         = 516
+let CMP3         = 517
 
 let FVAL_BOX_I64   = 768
 let FVAL_UNBOX_I64 = 769
@@ -40,6 +44,10 @@ fn name(op) {
   if op == STORE_MEM64 then "STORE.MEM64" else
   if op == ADD_SLOT then "ADD.SLOT" else
   if op == CMP_ZERO then "CMP.ZERO" else
+  if op == ADD3 then "ADD3" else
+  if op == SUB3 then "SUB3" else
+  if op == MUL3 then "MUL3" else
+  if op == CMP3 then "CMP3" else
   if op == FVAL_BOX_I64 then "FVAL.BOX_I64" else
   if op == FVAL_UNBOX_I64 then "FVAL.UNBOX_I64" else
   if op == FVAL_CHECK_TAG then "FVAL.CHECK_TAG" else
@@ -59,7 +67,7 @@ fn name(op) {
 
 export {
   LOAD_IMM64, LOAD_SLOT, STORE_SLOT, STORE_PARAM, LOAD_ARG, LOAD_MEM64, STORE_MEM64,
-  ADD_SLOT, CMP_ZERO,
+  ADD_SLOT, CMP_ZERO, ADD3, SUB3, MUL3, CMP3,
   FVAL_BOX_I64, FVAL_UNBOX_I64, FVAL_CHECK_TAG,
   BR_NE, BR_UNCOND,
   CALL_REL32, RET_I64,

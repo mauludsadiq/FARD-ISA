@@ -1,0 +1,26 @@
+import("src/fard_isa_sim") as sim
+import("src/fard_isa_opcodes") as op
+import("src/fard_isa_types") as ty
+import("src/omir_to_fard_isa") as lower
+import("src/fard_isa_memory") as mem
+import("std/list") as list
+import("std/str") as str
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+let program = [
+  lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 256, [lower.operand(1, 16, ty.hex16(1)), lower.operand(2, 64, ty.hex64(256))]),
+  lower.isa_instr(op.TRUST_READ, 0, 1, 0, 0, [lower.operand(1, 16, ty.hex16(1))]),
+  lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+]
+
+let final = sim.run(program, ty.initial_state(1, genesis), 20)
+let expected = str.slice(list.get(final.events, 0).digest, 7, str.len(list.get(final.events, 0).digest))
+let observed = str.concat(list.build(32, fn(i) { ty.hex8(mem.load_byte(final.memory, 256 + i)) }))
+{
+  expected: expected,
+  observed: observed,
+  trust_event: list.get(final.events, 1),
+  memory_root_changed: final.memory_root != ty.memory_root({}),
+  receipt_changed: final.receipt != genesis
+}

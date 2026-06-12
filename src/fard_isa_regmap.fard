@@ -1,0 +1,67 @@
+/// fard_isa_regmap — maps FARD Prim OMIR operands (post-RA/peephole)
+/// to FARD-ISA register-file indices (0-31).
+///
+/// Layout (32 registers):
+///   0-5    rax,rcx,rdx,rbx,rsp,rbp   (kept for ABI/legacy mapping)
+///   6-9    rsi,rdi,r8,r9             (ABI arg regs 1-4; arg0=rdi index 7)
+///   10-13  r10,r11,r12,r13           (RA scratch/callee-saved)
+///   14-15  r14,r15
+///   16-31  stack slots -8,-16,...,-128 (slot N -> 16 + (-N/8 - 1))
+///          i.e. slot -8 -> 16, slot -16 -> 17, ... slot -128 -> 31
+
+import("std/rec") as rec
+import("std/str") as str
+
+// NOTE: ISA register 0 is r_zero (hardwired unit, writes discarded -- see
+// fard_isa_registers.fard R_ZERO). All FARD Prim registers/slots are
+// therefore offset by +1 to avoid colliding with it. Valid range 1-31
+// (REG_COUNT=32), giving 16 named registers (1-16) + 15 stack slots (17-31).
+
+fn reg_name_to_idx(name) {
+  if name == "rax" then 1 else
+  if name == "rcx" then 2 else
+  if name == "rdx" then 3 else
+  if name == "rbx" then 4 else
+  if name == "rsp" then 5 else
+  if name == "rbp" then 6 else
+  if name == "rsi" then 7 else
+  if name == "rdi" then 8 else
+  if name == "r8"  then 9 else
+  if name == "r9"  then 10 else
+  if name == "r10" then 11 else
+  if name == "r11" then 12 else
+  if name == "r12" then 13 else
+  if name == "r13" then 14 else
+  if name == "r14" then 15 else
+  if name == "r15" then 16 else
+  panic(str.concat(["fard_isa_regmap: unknown register name: ", name]))
+}
+
+fn slot_to_idx(slot) {
+  // slot is negative, multiple of 8: -8 -> 17, -16 -> 18, ... -120 -> 31
+  let n = (0 - slot) / 8 in
+  if n < 1 || n > 15 then
+    panic(str.concat(["fard_isa_regmap: stack slot out of range (max 15 slots): ", str.from(slot)]))
+  else
+    16 + n
+}
+
+// operand: {k:"reg",name:...} | {k:"stack",slot:...}
+fn operand_idx(operand) {
+  if operand.k == "reg" then reg_name_to_idx(operand.name)
+  else if operand.k == "stack" then slot_to_idx(operand.slot)
+  else panic(str.concat(["fard_isa_regmap: unknown operand kind: ", operand.k]))
+}
+
+// ABI argument register index by position (0=rdi,1=rsi,2=rdx,3=rcx,4=r8,5=r9)
+fn abi_arg_idx(arg_idx) {
+  if arg_idx == 0 then reg_name_to_idx("rdi") else
+  if arg_idx == 1 then reg_name_to_idx("rsi") else
+  if arg_idx == 2 then reg_name_to_idx("rdx") else
+  if arg_idx == 3 then reg_name_to_idx("rcx") else
+  if arg_idx == 4 then reg_name_to_idx("r8") else
+  if arg_idx == 5 then reg_name_to_idx("r9") else
+  panic("fard_isa_regmap: arg_idx > 5 unsupported")
+}
+
+export { reg_name_to_idx, slot_to_idx, operand_idx, abi_arg_idx }
