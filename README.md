@@ -2,7 +2,7 @@
 
 The instruction set architecture for FARD — a deterministic, self-compiling language where every execution is a cryptographic proof.
 
-FARD-ISA is designed for provability, not performance. Every instruction that retires produces a canonical event. The accumulator advances with every retirement. A sealed epoch is a cryptographic proof that a specific program ran, produced a specific output, and did so on a specific device.
+FARD-ISA is designed for provability AND performance. Every instruction that retires produces a canonical event. The accumulator advances with every retirement. A sealed epoch is a cryptographic proof that a specific program ran, produced a specific output, and did so on a specific device. Optimizations that reduce instruction count -- register allocation, peephole copy propagation and dead-store elimination -- reduce retirements directly, making proofs cheaper without weakening them: see "Optimization Impact on Epoch Cost" below.
 
 ---
 
