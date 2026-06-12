@@ -135,3 +135,80 @@ test "golden equivalence finalize" {
   let r = golden_run(p, ty.initial_state(1, genesis), 20) in
   r.final.receipt == r.recomputed_receipt
 }
+
+// ── New opcodes (ADD3/SUB3/MUL3/CMP3/LOAD_SLOT) -- receipt equivalence ──────
+
+test "golden equivalence LOAD_SLOT (register move)" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 55, []),
+    lower.isa_instr(op.LOAD_SLOT, 2, 1, 0, 1, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 10) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence ADD3 (3-address)" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 40, []),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 2, []),
+    lower.isa_instr(op.ADD3, 3, 1, 2, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 10) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence SUB3 (3-address)" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 7, []),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 2, []),
+    lower.isa_instr(op.SUB3, 3, 1, 2, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 10) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence MUL3 (3-address)" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 5, []),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 2, []),
+    lower.isa_instr(op.MUL3, 3, 1, 2, 0, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 10) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence CMP3 (3-address, all predicates)" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 10, []),
+    lower.isa_instr(op.LOAD_IMM64, 2, 0, 0, 7, []),
+    lower.isa_instr(op.CMP3, 3, 1, 2, 0, []),  // eq
+    lower.isa_instr(op.CMP3, 4, 1, 2, 1, []),  // ne
+    lower.isa_instr(op.CMP3, 5, 1, 2, 2, []),  // lt
+    lower.isa_instr(op.CMP3, 6, 1, 2, 3, []),  // le
+    lower.isa_instr(op.CMP3, 7, 1, 2, 4, []),  // gt
+    lower.isa_instr(op.CMP3, 8, 1, 2, 5, []),  // ge
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 20) in
+  r.final.receipt == r.recomputed_receipt
+}
+
+test "golden equivalence CMP_ZERO on register operand" {
+  let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111" in
+  let p = [
+    lower.isa_instr(op.LOAD_IMM64, 1, 0, 0, 0, []),
+    lower.isa_instr(op.CMP_ZERO, 0, 0, 0, 1, []),
+    lower.isa_instr(op.HALT, 0, 0, 0, 0, [])
+  ] in
+  let r = golden_run(p, ty.initial_state(1, genesis), 10) in
+  r.final.receipt == r.recomputed_receipt
+}

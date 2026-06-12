@@ -185,7 +185,13 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_retirement_reduction.fard           2 passed
    fardrun test --program tests/test_branch_call_fixups.fard             3 passed
 
-   Total: 86 tests, all passing
+   Total: 92 tests, all passing
+
+   (test_golden_interpreter_equivalence.fard grew from 10 -> 16 with
+   receipt-equivalence checks for LOAD_SLOT, ADD3, SUB3, MUL3, CMP3, and
+   CMP_ZERO-on-register -- the opcodes FARD Prim's register allocator
+   and peephole pass actually emit. test_fard_isa_registers.fard grew
+   from 4 -> 6 to reflect REG_COUNT=64.)
 
 ---
 

@@ -1,12 +1,19 @@
 import("../src/fard_isa_registers") as regs
 import("../src/fard_isa_types") as ty
 
-test "register count is 32" {
-  regs.REG_COUNT == 32
+test "register count is 64" {
+  // Increased from 32 -> 64 to accommodate FARD Prim's post-RA/peephole
+  // OMIR via fard_isa_regmap: 16 named x86-64 registers (indices 1-16)
+  // plus up to 32 stack slots (indices 32-63), with index 0 reserved as
+  // r_zero. See fard_isa_regmap.fard and
+  // tests/test_retirement_reduction.fard (fib's post-RA OMIR uses stack
+  // slots down to -136, i.e. 17 slots, which a 32-register file with
+  // R_FP/R_SP also reserved could not address).
+  regs.REG_COUNT == 64
 }
 
-test "valid registers are 0 through 31" {
-  regs.valid_reg(0) && regs.valid_reg(31) && !regs.valid_reg(32)
+test "valid registers are 0 through 63" {
+  regs.valid_reg(0) && regs.valid_reg(63) && !regs.valid_reg(64)
 }
 
 test "r_zero reads unit" {
