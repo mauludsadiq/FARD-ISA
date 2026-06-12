@@ -41,11 +41,13 @@ This repo targets Tier 2. Tier 3 requires silicon provisioning.
      fard_isa_encoding.fard    16-byte fixed-width instruction encoding and decoding
      fard_isa_memory.fard      page-aligned memory model, u64 little-endian store/load
      fard_isa_opcodes.fard     opcode constants
+     fard_isa_regmap.fard      FARD Prim register/stack-slot operands -> ISA reg file (1-31)
      fard_isa_registers.fard   32 registers, r_zero reads unit, SysV ABI mapping
-     fard_isa_sim.fard         simulator: ADD, FVAL.CHECK_TAG, STORE/LOAD.MEM64
+     fard_isa_sim.fard         simulator: all opcodes incl. LOAD_SLOT, ADD3/SUB3/MUL3/CMP3
      fard_isa_types.fard       FardVal layout (tag+4, payload+8), validation, hex helpers
      fard_isa.fard             top-level re-export
-     omir_to_fard_isa.fard     maps OMIR ops to ISA instructions
+     omir_to_fard_isa.fard     maps OMIR ops to ISA instructions (legacy 13-op + FARD Prim
+                               post-RA/peephole dialect via map_fard_prim_program)
      trust_semantics.fard      TRUST.READ/FINALIZE/LOCK/ATTEST/VERIFY semantics
 
 ---
@@ -57,8 +59,13 @@ Fixed-width 16 bytes per instruction. Every instruction retirement produces a Ca
    LOAD.IMM64     load immediate 64-bit value into register
    LOAD_SLOT      load from stack slot into register
    STORE_SLOT     store register to stack slot
-   ADD_SLOT       add register and stack slot
-   CMP_ZERO       compare stack slot to zero
+   ADD_SLOT       add register and stack slot (2-address, implicit accumulator)
+   CMP_ZERO       compare register/slot to zero, sets flags
+   ADD3           rd = rs1 + rs2   (3-address, reg or slot operands)
+   SUB3           rd = rs1 - rs2
+   MUL3           rd = rs1 * rs2
+   CMP3           rd = (rs1 cmp rs2), predicate in imm64
+                  (0=eq 1=ne 2=lt 3=le 4=gt 5=ge)
    STORE_PARAM    store ABI argument register to stack slot at function entry
    LOAD_ARG       load stack slot into ABI argument register before call
    FVAL_BOX_I64   box integer into FardVal (tag=0, pad=0, payload=i64)
@@ -77,6 +84,25 @@ Trust instructions:
    TRUST.VERIFY   assert prior_epoch_receipt matches expected digest, fault if not
 
 ---
+
+## Register File
+
+32 registers, index 0 (r_zero) is hardwired: reads as unit, writes
+discarded. Indices 1-31 are general purpose.
+
+FARD Prim's compiled OMIR (post register-allocation and peephole) uses
+named x86-64 registers (rax, rcx, ..., r15) and stack slots (-8, -16,
+..., -120). fard_isa_regmap.fard maps these onto indices 1-31:
+
+   index  1-16   rax,rcx,rdx,rbx,rsp,rbp,rsi,rdi,r8..r15
+   index 17-31   stack slots -8 .. -120 (slot -8N -> index 16+N)
+
+This means FARD Prim's optimized OMIR -- the same code that runs
+natively on x86-64/ARM64 -- is *directly* a FARD-ISA program via
+omir_to_fard_isa.map_fard_prim_program. No separate "ISA dialect":
+register allocation that reduces native instruction count also
+reduces FARD-ISA instruction retirements, which reduces canonical
+events per epoch.
 
 ## FardVal Layout
 
@@ -119,8 +145,9 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_phase3_pipeline_receipt.fard        4 passed
    fardrun test --program tests/test_recursive_programs.fard             3 passed
    fardrun test --program tests/test_tier2_attestation.fard             3 passed
+   fardrun test --program tests/test_fard_prim_omir_mapping.fard         4 passed
 
-   Total: 77 tests, all passing
+   Total: 81 tests, all passing
 
 ---
 
@@ -136,7 +163,11 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
 - [x] Page-aligned memory model
 - [x] u64 little-endian store/load
 - [x] Memory root hash after every store
-- [x] OMIR to ISA mapping (13 ops)
+- [x] OMIR to ISA mapping (13 ops, legacy lowercase-kind dialect)
+- [x] FARD Prim post-RA/peephole OMIR mapping (map_fard_prim_program):
+      ADD3/SUB3/MUL3/CMP3 (3-address reg/slot), LOAD_SLOT as generic
+      register move, register-file unification of all r10-r15 +
+      stack slots into indices 1-31
 - [x] Trust instruction semantics (epoch_digest, attest)
 - [x] Simulator: ADD, FVAL.CHECK_TAG, STORE/LOAD.MEM64
 
