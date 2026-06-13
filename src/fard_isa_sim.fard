@@ -191,6 +191,11 @@ fn execute(state, instr) {
     let return_pc = state.pc + 16 in
     let target = instr.imm64 + 0 in
     transition_result(target, state.flags, state.privilege, [], [], [], [], event.result_digest_value(ty.fardval_int(target)), event.trap_digest_none(), false, { ...state, call_stack: list.append(rec.getOr(state, "call_stack", []), return_pc) })
+  else if instr.opcode == op.CALL_REG then
+    // call to dynamic target: PC = regs[rd].payload, push return addr
+    let target = read_reg(state, instr.rd) in
+    let return_pc = state.pc + 16 in
+    transition_result(target.payload, state.flags, state.privilege, [{reg_index: instr.rd, value: target}], [], [], [], event.result_digest_value(target), event.trap_digest_none(), false, { ...state, call_stack: list.append(rec.getOr(state, "call_stack", []), return_pc) })
   else if instr.opcode == op.RET_I64 then
     let ret_v = read_reg(state, instr.rd) in
     if list.len(rec.getOr(state, "call_stack", [])) == 0 then

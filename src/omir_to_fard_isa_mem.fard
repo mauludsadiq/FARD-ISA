@@ -205,6 +205,28 @@ fn map_one(inst) {
     let r = read_operand(src_operand, SCRATCH_VAL1) in
     list.concat([r.insts, write_operand({ k: "reg", name: arg_reg_name(inst.arg_idx) }, r.reg)])
 
+  else if op_ == "StoreFnPtr" then
+    // Store the closure's function pointer (a PC value = fn_table[fn_name]*16)
+    // into mem[ptr+0]. The actual PC is not known at map_one time, so we emit
+    // a LOAD_IMM64(scratch, 0) placeholder that map_module patches like CallReloc.
+    let pr = read_operand(inst.ptr, SCRATCH_VAL1) in
+    list.concat([
+      pr.insts,
+      [ ii(op.LOAD_IMM64, SCRATCH_VAL2, 0, 0, 0),   // placeholder; patched by map_module
+        ii(op.STORE_MEM64, pr.reg, SCRATCH_VAL2, 0, 0) ]
+    ])
+
+  else if op_ == "CallIndirect" then
+    // ABI: rdi = closure ptr (already loaded by preceding LoadArg(0,...)).
+    // Call mem[rdi+0] = the fn-ptr stored by StoreFnPtr.
+    // Expand to: LOAD_IMM64(off,0); ADD3(addr,rdi,off); LOAD_MEM64(target,addr); CALL_REG(target)
+    list.concat([
+      [ ii(op.LOAD_IMM64, SCRATCH_OFF,  0, 0, 0),
+        ii(op.ADD3, SCRATCH_ADDR, reg_name_to_idx("rdi"), SCRATCH_OFF, 0),
+        ii(op.LOAD_MEM64, SCRATCH_VAL1, SCRATCH_ADDR, 0, 0),
+        ii(op.CALL_REG, SCRATCH_VAL1, 0, 0, 0) ]
+    ])
+
   else if op_ == "LoadHeap" then
     // dst = mem[ptr_value + offset]
     let pr = read_operand(inst.ptr, SCRATCH_VAL1) in
@@ -392,6 +414,13 @@ fn map_module(funcs) {
       else if inst.op == "CallReloc" then
         let target = rec.get(fn_table, inst.name) in
         patch_imm64(acc, global_off, target * 16)
+      else if inst.op == "StoreFnPtr" then
+        // Patch the LOAD_IMM64 placeholder that map_one emitted.
+        // StoreFnPtr expands to: [ptr_read_insts..., LOAD_IMM64(placeholder), STORE_MEM64].
+        // The LOAD_IMM64 is at global_off + len(ptr_read_insts).
+        let pr_len = list.len(read_operand(inst.ptr, SCRATCH_VAL1).insts) in
+        let fn_pc = rec.get(fn_table, inst.fn_name) * 16 in
+        patch_imm64(acc, global_off + pr_len, fn_pc)
       else
         acc
     })
