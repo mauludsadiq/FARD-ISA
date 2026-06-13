@@ -140,6 +140,39 @@ slowness on deep recursion. Unifying these -- e.g. only spilling to
 memory for slots that are provably cross-call-live, keeping
 non-cross-call slots register-resident -- is future work.
 
+## Heap Programs and the Function Table (map_module)
+
+FARD Prim compiles every program with heap allocation (lists, records,
+strings, closures) to MULTIPLE functions -- e.g. get0([10,20,30])
+produces fard_alloc (called), get0, AND fard_main, with fard_main
+issuing CallReloc to both fard_alloc and get0. The single-function
+entry_offset()=0 convention (correct for fact/fib's self-recursion)
+cannot resolve these cross-function calls.
+
+map_module(funcs) builds a real function table:
+  - LoadHeap{dst,ptr,offset}, StoreHeap{ptr,offset,src}, and
+    LoadHeapDyn{dst,ptr,idx} (8-byte header + idx*8 element offset)
+    are mapped to address-computation + LOAD_MEM64/STORE_MEM64,
+    the same pattern as stack-slot access -- zero new opcodes.
+  - fard_alloc is a synthetic 3-instruction function at offset 0,
+    mirroring the real x86-64 bump-allocator stub exactly:
+    R_BUMP (register 20) holds the bump pointer; fard_alloc returns
+    the old value in rax and advances R_BUMP by rdi (the requested
+    size).
+  - Every compiled function follows at its own base offset; Jne/Jmp
+    resolve to (function_base + local_label_offset)*16, and
+    CallReloc{name} resolves to fn_table[name]*16 for ANY function,
+    not just self-recursion.
+  - The program's entry point is fn_table["fard_main"]*16.
+
+Verified correct end-to-end:
+
+   get0([10,20,30]) = 10   (LoadHeapDyn, list indexing)
+   geta({a:42,b:7}) = 42   (LoadHeap, record field access)
+
+Both run in single-digit seconds (no deep recursion, so
+fard_isa_memory's per-store rehash cost stays small).
+
 ## Optimization Impact on Epoch Cost
 
 FARD Prim's register allocator (callee-saved r12-r15 for values live
@@ -222,8 +255,9 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_retirement_reduction.fard           2 passed
    fardrun test --program tests/test_branch_call_fixups.fard             3 passed
    fardrun test --program tests/test_omir_to_fard_isa_mem.fard           3 passed
+   fardrun test --program tests/test_omir_to_fard_isa_mem_heap.fard       2 passed
 
-   Total: 95 tests, all passing
+   Total: 97 tests, all passing
 
    (test_golden_interpreter_equivalence.fard grew from 10 -> 16 with
    receipt-equivalence checks for LOAD_SLOT, ADD3, SUB3, MUL3, CMP3, and

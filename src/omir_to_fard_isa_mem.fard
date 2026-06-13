@@ -31,6 +31,7 @@ import("fard_isa_opcodes") as op
 import("fard_isa_registers") as regs
 
 let R_SP = 31
+let R_BUMP = 20  // bump-allocator pointer (persists across calls, like x86 rbx)
 
 let SCRATCH_OFF  = 15  // holds a slot offset / frame_size immediate
 let SCRATCH_ADDR = 16  // holds SP + offset
@@ -192,6 +193,43 @@ fn map_one(inst) {
     let r = read_operand(src_operand, SCRATCH_VAL1) in
     list.concat([r.insts, write_operand({ k: "reg", name: "rdi" }, r.reg)])
 
+  else if op_ == "LoadHeap" then
+    // dst = mem[ptr_value + offset]
+    let pr = read_operand(inst.ptr, SCRATCH_VAL1) in
+    list.concat([
+      pr.insts,
+      [ ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, inst.offset),
+        ii(op.ADD3, SCRATCH_ADDR, pr.reg, SCRATCH_OFF, 0),
+        ii(op.LOAD_MEM64, SCRATCH_VAL2, SCRATCH_ADDR, 0, 0) ],
+      write_operand(inst.dst, SCRATCH_VAL2)
+    ])
+
+  else if op_ == "StoreHeap" then
+    // mem[ptr_value + offset] = src_value
+    let pr = read_operand(inst.ptr, SCRATCH_VAL1) in
+    let sr = read_operand(inst.src, SCRATCH_VAL2) in
+    list.concat([
+      pr.insts, sr.insts,
+      [ ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, inst.offset),
+        ii(op.ADD3, SCRATCH_ADDR, pr.reg, SCRATCH_OFF, 0),
+        ii(op.STORE_MEM64, SCRATCH_ADDR, sr.reg, 0, 0) ]
+    ])
+
+  else if op_ == "LoadHeapDyn" then
+    // dst = mem[ptr_value + 8 + idx_value*8]  (8-byte header, then elements)
+    let pr = read_operand(inst.ptr, SCRATCH_VAL1) in
+    let ir = read_operand(inst.idx, SCRATCH_VAL2) in
+    list.concat([
+      pr.insts, ir.insts,
+      [ ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, 8),
+        ii(op.MUL3, SCRATCH_OFF, ir.reg, SCRATCH_OFF, 0),     // SCRATCH_OFF = idx*8
+        ii(op.ADD3, SCRATCH_ADDR, pr.reg, SCRATCH_OFF, 0),    // addr = ptr + idx*8
+        ii(op.LOAD_IMM64, SCRATCH_OFF, 0, 0, 8),
+        ii(op.ADD3, SCRATCH_ADDR, SCRATCH_ADDR, SCRATCH_OFF, 0), // addr += 8 (header)
+        ii(op.LOAD_MEM64, SCRATCH_VAL3, SCRATCH_ADDR, 0, 0) ],
+      write_operand(inst.dst, SCRATCH_VAL3)
+    ])
+
   else if op_ == "Jne" then
     [ii(op.BR_NE, 0, 0, 0, 0)]          // target patched by map_program
 
@@ -260,8 +298,98 @@ fn map_program(insts) {
   })
 }
 
+
+// ── fard_alloc (bump allocator) -------------------------------------------
+// Mirrors the real x86-64 stub (elf_exe.fard alloc_stub_x86):
+//   mov rax, rbx   ; rax = old_bump (return value)
+//   add rbx, rdi   ; rbx += size (new bump)
+//   ret
+// Here R_BUMP plays the role of rbx, and persists across the whole run
+// (initialized by the caller of map_module before sim.run).
+fn fard_alloc_stub() {
+  [ ii(op.LOAD_SLOT, RAX, R_BUMP, 0, R_BUMP),
+    ii(op.ADD3, R_BUMP, R_BUMP, reg_name_to_idx("rdi"), 0),
+    ii(op.RET_I64, RAX, 0, 0, 0) ]
+}
+
+fn sum(xs) { list.fold(xs, 0, fn(a,b) { a + b }) }
+
+fn prefix_sums(xs) {
+  list.fold(xs, { acc: 0, out: [] }, fn(st, x) {
+    { acc: st.acc + x, out: list.append(st.out, st.acc) }
+  }).out
+}
+
+/// Expand one function's OMIR into per-instruction ISA-instruction lists,
+/// plus a local label index (Lid -> offset within this function's own
+/// flattened expansion, i.e. NOT yet shifted by the function's base offset).
+fn expand_func(insts) {
+  let lists = list.map(insts, map_one) in
+  let lengths = list.map(lists, list.len) in
+  let local_offsets = prefix_sums(lengths) in
+  let label_index = list.fold(list.build(list.len(insts), fn(i){i}), {}, fn(acc, i) {
+    let inst = list.get(insts, i) in
+    if inst.op == "Label"
+      then rec.set(acc, key_label(inst.target.id), list.get(local_offsets, i))
+      else acc
+  }) in
+  { lists: lists, lengths: lengths, local_offsets: local_offsets, label_index: label_index }
+}
+
+/// Map a full multi-function module (list of {name, insts}) to a single
+/// flat FARD-ISA program with a real symbol table:
+///   - fard_alloc is a synthetic function at offset 0 (3 instructions)
+///   - each compiled function follows, in order, at its own base offset
+///   - Jne/Jmp targets resolve to (function_base + local_label_offset)*16
+///   - CallReloc{name} resolves to fn_table[name]*16 (handles both
+///     self-recursion AND cross-function calls, e.g. AllocHeap's
+///     CallReloc("fard_alloc"))
+///
+/// Returns { prog: [...], fn_table: {name -> instruction_offset} }.
+/// The program's entry point is fn_table["fard_main"] * 16 (or whatever
+/// the top-level function is named).
+fn map_module(funcs) {
+  let alloc_prog = fard_alloc_stub() in
+  let alloc_len = list.len(alloc_prog) in
+
+  let expanded = list.map(funcs, fn(f) { expand_func(f.insts) }) in
+  let func_lens = list.map(expanded, fn(e) { sum(e.lengths) }) in
+  let func_bases_rel = prefix_sums(func_lens) in  // relative to end of alloc stub
+  let func_bases = list.map(func_bases_rel, fn(b) { b + alloc_len }) in
+
+  let fn_table = list.fold(list.build(list.len(funcs), fn(i){i}), { "fard_alloc": 0 }, fn(acc, i) {
+    rec.set(acc, list.get(funcs, i).name, list.get(func_bases, i))
+  }) in
+
+  let func_flats = list.map(expanded, fn(e) { list.flatten(e.lists) }) in
+  let flat0 = list.concat([alloc_prog, list.flatten(func_flats)]) in
+
+  // Second pass: patch Jne/Jmp (local label, shifted by function base) and
+  // CallReloc (global function-table lookup) for every function.
+  let patched = list.fold(list.build(list.len(funcs), fn(i){i}), flat0, fn(prog_acc, fi) {
+    let f = list.get(funcs, fi) in
+    let e = list.get(expanded, fi) in
+    let base = list.get(func_bases, fi) in
+    list.fold(list.build(list.len(f.insts), fn(j){j}), prog_acc, fn(acc, j) {
+      let inst = list.get(f.insts, j) in
+      let local_off = list.get(e.local_offsets, j) in
+      let global_off = base + local_off in
+      if inst.op == "Jne" || inst.op == "Jmp" then
+        let target_local = rec.get(e.label_index, key_label(inst.target.id)) in
+        patch_imm64(acc, global_off, (base + target_local) * 16)
+      else if inst.op == "CallReloc" then
+        let target = rec.get(fn_table, inst.name) in
+        patch_imm64(acc, global_off, target * 16)
+      else
+        acc
+    })
+  }) in
+
+  { prog: patched, fn_table: fn_table }
+}
+
 export {
-  R_SP, RAX,
+  R_SP, RAX, R_BUMP,
   reg_name_to_idx, read_operand, write_operand, map_one, map_program,
-  entry_offset
+  entry_offset, map_module, fard_alloc_stub
 }
