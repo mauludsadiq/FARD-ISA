@@ -99,6 +99,17 @@ fn write_operand(o, src_reg) {
     ])
 }
 
+fn arg_reg_name(arg_idx) {
+  // SysV AMD64 calling convention, first 6 integer args.
+  if arg_idx == 0 then "rdi" else
+  if arg_idx == 1 then "rsi" else
+  if arg_idx == 2 then "rdx" else
+  if arg_idx == 3 then "rcx" else
+  if arg_idx == 4 then "r8"  else
+  if arg_idx == 5 then "r9"  else
+  panic("omir_to_fard_isa_mem: arg_idx > 5 unsupported (SysV has 6 integer arg registers)")
+}
+
 fn cmp_predicate(cmp) {
   if cmp == "eq" then 0 else
   if cmp == "ne" then 1 else
@@ -188,10 +199,11 @@ fn map_one(inst) {
     list.concat([r.insts, [ii(op.CMP_ZERO, 0, 0, 0, r.reg)]])
 
   else if op_ == "LoadArg" || op_ == "LoadArgReg" then
-    // Single-argument functions only: source -> rdi.
+    // Move the i-th argument value into its SysV ABI register
+    // (rdi/rsi/rdx/rcx/r8/r9 for arg_idx 0-5) before a CallReloc.
     let src_operand = if rec.has(inst,"dst") then inst.dst else { k: "stack", slot: inst.slot } in
     let r = read_operand(src_operand, SCRATCH_VAL1) in
-    list.concat([r.insts, write_operand({ k: "reg", name: "rdi" }, r.reg)])
+    list.concat([r.insts, write_operand({ k: "reg", name: arg_reg_name(inst.arg_idx) }, r.reg)])
 
   else if op_ == "LoadHeap" then
     // dst = mem[ptr_value + offset]

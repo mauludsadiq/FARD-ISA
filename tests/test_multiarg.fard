@@ -1,0 +1,54 @@
+/// Gap #2: multi-argument functions. LoadArg/LoadArgReg.arg_idx routes
+/// to the correct SysV register (rdi/rsi/...) instead of always rdi.
+
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fardlex")   as lex
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fardparse") as par
+import("/Users/g.bogans/Downloads/FARD_v0.5/apps/fard_lower") as lower
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/fard_ir_to_ocir") as bridge
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/lower_ocir_to_omir") as omir_lower
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_tco") as tco
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_regalloc") as ra
+import("/Users/g.bogans/Downloads/FARD Prim/src/orgntr_prim/omir_peephole") as peep
+import("../src/omir_to_fard_isa_mem") as m
+import("../src/fard_isa_sim") as sim
+import("../src/fard_isa_types") as ty
+import("std/list") as list
+import("std/str") as str
+import("std/rec") as rec
+
+let genesis = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+let SP_BASE = 65536
+let HEAP_BASE = 131072
+
+fn compile_optimized(src) {
+  let raw = tco.tco_module(omir_lower.lower_module(
+    bridge.lower_module(
+      lower.lower_program(par.parse_module(lex.tokenize(src), 0).node)))) in
+  peep.peephole_module(ra.regalloc_module(raw)).funcs
+}
+
+fn run_module(funcs, max_steps) {
+  let m_out = m.map_module(funcs) in
+  let entry = rec.get(m_out.fn_table, "fard_main") in
+  let state0 = ty.initial_state(1, genesis) in
+  let regs1 = ty.reg_set(state0.regs, m.R_SP, ty.fardval_int(SP_BASE)) in
+  let regs2 = ty.reg_set(regs1, m.R_BUMP, ty.fardval_int(HEAP_BASE)) in
+  let state = { ...state0, regs: regs2, pc: entry * 16 } in
+  sim.run(m_out.prog, state, max_steps)
+}
+
+test "add(10,32)=42: 2-arg non-recursive call via CallReloc (arg_idx 0,1 -> rdi,rsi)" {
+  let funcs = compile_optimized("fn add(a,b){a+b}\nadd(10,32)") in
+  let final = run_module(funcs, 1000) in
+  final.halted && final.regs[str.from(m.RAX)].payload == 42
+}
+
+// 2-argument SELF-recursive function: sumto(n,acc) = sumto(n-1,acc+n), base case acc.
+// sumto(5,0) = 5+4+3+2+1+0 = 15. Exercises LoadArg arg_idx 0 AND 1 on a
+// recursive CallReloc -- the case that was previously broken (both args
+// would have routed to rdi, clobbering each other).
+test "sumto(5,0)=15: 2-arg SELF-RECURSIVE call (arg_idx 0,1 -> rdi,rsi)" {
+  let funcs = compile_optimized("fn sumto(n,acc){if n==0 then acc else sumto(n-1,acc+n)}\nsumto(5,0)") in
+  let final = run_module(funcs, 3000) in
+  final.halted && final.regs[str.from(m.RAX)].payload == 15
+}

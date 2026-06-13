@@ -256,8 +256,9 @@ Epoch seal: SHA256("FARD.EPOCH.v1" || genesis || R_final || final_state || outpu
    fardrun test --program tests/test_branch_call_fixups.fard             3 passed
    fardrun test --program tests/test_omir_to_fard_isa_mem.fard           3 passed
    fardrun test --program tests/test_omir_to_fard_isa_mem_heap.fard       2 passed
+   fardrun test --program tests/test_multiarg.fard                        2 passed
 
-   Total: 97 tests, all passing
+   Total: 99 tests, all passing
 
    (test_golden_interpreter_equivalence.fard grew from 10 -> 16 with
    receipt-equivalence checks for LOAD_SLOT, ADD3, SUB3, MUL3, CMP3, and
